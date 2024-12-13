@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciador Financeiro Doméstico</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Gerenciador Financeiro Doméstico</h1>
+        <div class="form-group">
+            <input type="text" id="description" placeholder="Descrição">
+            <input type="number" id="amount" placeholder="Valor">
+            <select id="type">
+                <option value="Receita">Receita</option>
+                <option value="Despesa">Despesa</option>
+            </select>
+            <select id="category">
+                <option value="Alimentação">Alimentação</option>
+                <option value="Transporte">Transporte</option>
+                <option value="Moradia">Moradia</option>
+                <option value="Lazer">Lazer</option>
+                <option value="Saúde">Saúde</option>
+                <option value="Educação">Educação</option>
+                <option value="Outros">Outros</option>
+            </select>
+            <input type="date" id="due-date" placeholder="Data de Vencimento">
+            <button onclick="addTransaction()">Adicionar</button>
+        </div>
+        <div class="summary">
+            <h2>Resumo Financeiro</h2>
+            <p>Saldo Total: R$ <span id="total-balance">0.00</span></p>
+            <p>Total Receitas: R$ <span id="total-income">0.00</span></p>
+            <p>Total Despesas: R$ <span id="total-expense">0.00</span></p>
+        </div>
+        <div class="transactions">
+            <h2>Transações</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Descrição</th>
+                            <th>Valor</th>
+                            <th>Tipo</th>
+                            <th>Categoria</th>
+                            <th>Data de Vencimento</th>
+                            <th>Dias para Vencer</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transaction-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="charts">
+            <h2>Gráficos Financeiros</h2>
+            <div class="chart">
+                <h3>Distribuição de Despesas</h3>
+                <canvas id="expenseChart" width="400" height="400"></canvas>
+            </div>
+            <div class="chart">
+                <h3>Meta Financeira</h3>
+                <input type="number" id="financial-goal" placeholder="Defina sua meta">
+                <button onclick="setGoal()">Definir Meta</button>
+                <canvas id="goalChart" width="400" height="400"></canvas>
+            </div>
+        </div>
+        <button onclick="downloadReport()">Baixar Relatório</button>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
