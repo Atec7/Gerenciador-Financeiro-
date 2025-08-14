@@ -118,15 +118,12 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 
 <script>
-// registra plugin
-if(typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
-
-// Sua configuração do Firebase (mantive a sua config)
+// Configuração do Firebase (mantida)
 const firebaseConfig = {
   apiKey: "AIzaSyDXDB6jbRy3o1eXcdXqmd8zrplDk1IezqM",
   authDomain: "sistema-financeiro-51295.firebaseapp.com",
   projectId: "sistema-financeiro-51295",
-  storageBucket: "sistema-financeiro-51295.firebasestorage.app",
+  storageBucket: "sistema-financeiro-51295.appspot.com",
   messagingSenderId: "340721821688",
   appId: "1:340721821688:web:77485712a056405f5f180d",
   measurementId: "G-X30NBWCY92",
@@ -135,15 +132,16 @@ const firebaseConfig = {
 
 let useFirebase = false;
 let db = null;
-try{
-  if(window.firebase && firebase.initializeApp){
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-    useFirebase = true;
-    console.log('Firebase conectado (compat)');
-  }
-}catch(e){ console.warn('Firebase não disponível, usando LocalStorage como fallback.', e); useFirebase = false; }
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  useFirebase = true;
+  console.log('Firebase conectado');
+} catch (e) {
+  console.warn('Firebase não disponível — usando LocalStorage.', e);
+}
 
+// Elementos da interface
 const balanceEl = document.getElementById('balance');
 const totalIncomeEl = document.getElementById('total-income');
 const totalExpenseEl = document.getElementById('total-expense');
@@ -153,283 +151,358 @@ const addTransactionBtn = document.getElementById('add-transaction');
 const exportBtn = document.getElementById('export-csv');
 const toggleChartsBtn = document.getElementById('toggle-charts');
 const chartsContainer = document.getElementById('charts-container');
+const filterStart = document.getElementById('filter-start');
+const filterEnd = document.getElementById('filter-end');
 
 let transactions = [];
+let editMode = false;
+let editKey = null;
 
-// Carrega transações do Firebase ou LocalStorage
-function loadTransactions(){
-  if(useFirebase && db){
+// Utilitários
+function formatCurrency(value) {
+  const num = Number(value) || 0;
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+}
+function formatDateBR(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+function getStatus(t) {
+  if (t.type === 'income') return 'Pago';
+  if (t.status) return t.status;
+  const today = new Date().toISOString().split('T')[0];
+  return t.date < today ? 'Atrasado' : 'Pendente';
+}
+
+// Carregar transações
+function loadTransactions() {
+  if (useFirebase && db) {
     db.ref('transactions').on('value', snapshot => {
       const val = snapshot.val();
-      transactions = val ? Object.keys(val).map(k => ({ _key: k, ...val[k] })) : [];
-      // mantemos um backup local
-      try{ localStorage.setItem('transactions_backup', JSON.stringify(transactions)); }catch(e){}
+      transactions = val ? Object.entries(val).map(([k, v]) => ({ _key: k, ...v })) : [];
       refreshAll();
     }, err => {
-      console.error('Erro ao ler Firebase:', err);
+      console.error('Erro lendo Firebase — fallback para LocalStorage:', err);
       loadFromLocal();
     });
   } else {
     loadFromLocal();
   }
 }
-function loadFromLocal(){
-  const stored = localStorage.getItem('transactions_backup') || localStorage.getItem('transactions');
-  if(stored){
-    try{ transactions = JSON.parse(stored); }catch(e){ transactions = []; }
-  } else transactions = [];
+function loadFromLocal() {
+  const stored = localStorage.getItem('transactions_backup');
+  transactions = stored ? JSON.parse(stored) : [];
   refreshAll();
 }
 
-// Salva uma nova transação (Firebase ou LocalStorage)
-function saveTransaction(transaction) {
-  if(useFirebase && db){
-    const newRef = db.ref('transactions').push();
-    newRef.set(transaction).catch(e => {
-      console.error('Erro ao salvar no Firebase, salvando localmente', e);
-      transaction._key = String(Date.now());
-      transactions.push(transaction);
-      localStorage.setItem('transactions_backup', JSON.stringify(transactions));
-      refreshAll();
-    });
+// Salvar transação
+function saveTransaction(data) {
+  if (useFirebase && db) {
+    if (editMode && editKey) {
+      db.ref(`transactions/${editKey}`).update(data);
+    } else {
+      db.ref('transactions').push(data);
+    }
   } else {
-    transaction._key = String(Date.now());
-    transactions.push(transaction);
-    try{ localStorage.setItem('transactions_backup', JSON.stringify(transactions)); }catch(e){}
+    if (editMode && editKey) {
+      const idx = transactions.findIndex(t => t._key === editKey);
+      if (idx >= 0) transactions[idx] = { ...transactions[idx], ...data };
+    } else {
+      data._key = String(Date.now());
+      transactions.push(data);
+    }
+    localStorage.setItem('transactions_backup', JSON.stringify(transactions));
+  }
+  resetForm();
+  refreshAll();
+}
+
+// Excluir
+function deleteTransaction(key) {
+  if (useFirebase && db) {
+    db.ref(`transactions/${key}`).remove();
+  } else {
+    transactions = transactions.filter(t => t._key !== key);
+    localStorage.setItem('transactions_backup', JSON.stringify(transactions));
     refreshAll();
   }
 }
 
-function formatCurrency(value){
-  const num = Number(value) || 0;
-  return new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(num);
-}
-function formatDateBR(dateStr){
-  if(!dateStr) return '';
-  const d = new Date(dateStr);
-  if(isNaN(d)) return dateStr;
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-}
-function getStatus(t){
-  if(t.type === 'income') return 'Pago';
-  if(t.status) return t.status;
-  const today = new Date().toISOString().split('T')[0];
-  return t.date < today ? 'Atrasado' : 'Pendente';
+// Atualizar status
+function updateStatus(key, status) {
+  if (useFirebase && db) {
+    db.ref(`transactions/${key}`).update({ status });
+  } else {
+    const trans = transactions.find(t => t._key === key);
+    if (trans) trans.status = status;
+    localStorage.setItem('transactions_backup', JSON.stringify(transactions));
+    refreshAll();
+  }
 }
 
-function updateDashboard(){
-  const income = transactions.filter(t => t.type === 'income').reduce((a,t) => a + Number(t.amount || 0), 0);
-  const expense = transactions.filter(t => t.type === 'expense').reduce((a,t) => a + Number(t.amount || 0), 0);
-  balanceEl.textContent = formatCurrency(income - expense);
-  totalIncomeEl.textContent = formatCurrency(income);
-  totalExpenseEl.textContent = formatCurrency(expense);
-  pendingCountEl.textContent = transactions.filter(t => ['Pendente','Atrasado'].includes(getStatus(t))).length;
+// Editar
+function editTransaction(key) {
+  const t = transactions.find(t => t._key === key);
+  if (!t) return;
+  document.getElementById('description').value = t.description;
+  document.getElementById('amount').value = t.amount;
+  document.getElementById('type').value = t.type;
+  document.getElementById('category').value = t.category;
+  document.getElementById('date').value = t.date;
+  editMode = true;
+  editKey = key;
+  addTransactionBtn.textContent = 'Atualizar';
 }
 
-function renderTable(filtered = transactions){
+// Tabela
+function renderTable(data = transactions) {
   transactionsTable.innerHTML = '';
-  filtered.forEach((t) => {
-    const status = getStatus(t);
+  data.forEach(t => {
     const tr = document.createElement('tr');
-    // Cria células manualmente para evitar problemas com quotes
-    const tdDesc = document.createElement('td'); tdDesc.textContent = t.description || '';
-    const tdVal = document.createElement('td'); tdVal.className = t.type === 'income' ? 'income' : 'expense'; tdVal.textContent = formatCurrency(t.amount);
-    const tdType = document.createElement('td'); tdType.textContent = t.type;
-    const tdCat = document.createElement('td'); tdCat.textContent = t.category || '';
-    const tdDate = document.createElement('td'); tdDate.textContent = formatDateBR(t.date);
-    const tdStatus = document.createElement('td');
-    if(t.type === 'expense'){
-      const sel = document.createElement('select'); sel.className = 'status-select';
-      ['Pendente','Pago','Atrasado'].forEach(opt => { const o = document.createElement('option'); o.value = opt; o.textContent = opt; if(opt === status) o.selected = true; sel.appendChild(o); });
-      sel.addEventListener('change', () => updateStatus(t._key, sel.value));
-      tdStatus.appendChild(sel);
-    } else {
-      tdStatus.textContent = status;
-    }
-    const tdActions = document.createElement('td');
-    const delBtn = document.createElement('button'); delBtn.textContent = 'Excluir'; delBtn.addEventListener('click', () => deleteTransaction(t._key));
-    tdActions.appendChild(delBtn);
-
-    tr.appendChild(tdDesc); tr.appendChild(tdVal); tr.appendChild(tdType); tr.appendChild(tdCat); tr.appendChild(tdDate); tr.appendChild(tdStatus); tr.appendChild(tdActions);
+    tr.innerHTML = `
+      <td>${t.description}</td>
+      <td class="${t.type === 'income' ? 'income' : 'expense'}">${formatCurrency(t.amount)}</td>
+      <td>${t.type}</td>
+      <td>${t.category}</td>
+      <td>${formatDateBR(t.date)}</td>
+      <td>
+        ${t.type === 'expense'
+        ? `<select class="status-select" onchange="updateStatus('${t._key}', this.value)">
+            <option value="Pendente" ${getStatus(t)==='Pendente'?'selected':''}>Pendente</option>
+            <option value="Pago" ${getStatus(t)==='Pago'?'selected':''}>Pago</option>
+            <option value="Atrasado" ${getStatus(t)==='Atrasado'?'selected':''}>Atrasado</option>
+           </select>`
+        : getStatus(t)}
+      </td>
+      <td>
+        <button onclick="editTransaction('${t._key}')">Editar</button>
+        <button onclick="deleteTransaction('${t._key}')">Excluir</button>
+      </td>`;
     transactionsTable.appendChild(tr);
   });
 }
 
-function updateStatus(key, value){
-  if(!key) return;
-  if(useFirebase && db){
-    db.ref(`transactions/${key}`).update({ status: value });
-  } else {
-    const idx = transactions.findIndex(t => t._key === key);
-    if(idx >= 0){ transactions[idx].status = value; try{ localStorage.setItem('transactions_backup', JSON.stringify(transactions)); }catch(e){} refreshAll(); }
-  }
+// Cards
+function updateDashboard(data = transactions) {
+  const income = data.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
+  const expense = data.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+  balanceEl.textContent = formatCurrency(income - expense);
+  totalIncomeEl.textContent = formatCurrency(income);
+  totalExpenseEl.textContent = formatCurrency(expense);
+  pendingCountEl.textContent = data.filter(t => ['Pendente','Atrasado'].includes(getStatus(t))).length;
 }
 
-function addTransaction(){
-  const d = document.getElementById('description').value.trim();
-  const a = document.getElementById('amount').value;
-  const t = document.getElementById('type').value;
-  const c = document.getElementById('category').value;
-  const dt = document.getElementById('date').value;
-  if(!d || !a || !dt) return alert('Preencha todos os campos!');
-  const transaction = { description: d, amount: Number(parseFloat(a).toFixed(2)), type: t, category: c, date: dt, status: null };
-  saveTransaction(transaction);
-  // limpa campos
-  document.getElementById('description').value = '';
-  document.getElementById('amount').value = '';
-  document.getElementById('date').value = '';
-}
+// Filtros
+function applyFilters() {
+  const start = filterStart.value;
+  const end = filterEnd.value;
+  const typeF = document.getElementById('filter-type').value;
+  const catF = document.getElementById('filter-category').value;
 
-function deleteTransaction(key){
-  if(!key) return;
-  if(useFirebase && db){
-    db.ref(`transactions/${key}`).remove();
-  } else {
-    transactions = transactions.filter(t => t._key !== key);
-    try{ localStorage.setItem('transactions_backup', JSON.stringify(transactions)); }catch(e){}
-    refreshAll();
-  }
-}
-
-function exportCSV(){
-  let csv = 'Descrição,Valor,Tipo,Categoria,Data,Status\n';
-  transactions.forEach(t => {
-    const line = [
-      `"${(t.description||'').replace(/"/g,'""')}")` ,
-      (t.amount||0),
-      t.type,
-      t.category || '',
-      formatDateBR(t.date),
-      getStatus(t)
-    ];
-    // garantir CSV válido
-    csv += `${"\"" + (t.description||'').replace(/"/g,'""') + "\""},${t.amount},${t.type},${t.category||''},${formatDateBR(t.date)},${getStatus(t)}\n`;
-  });
-  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'transacoes.csv'; a.click();
-}
-
-function applyFilters(){
-  const start = document.getElementById('filter-start').value;
-  const end = document.getElementById('filter-end').value;
-  const type = document.getElementById('filter-type').value;
-  const cat = document.getElementById('filter-category').value;
   let filtered = transactions.slice();
-  if(start) filtered = filtered.filter(t => t.date >= start);
-  if(end) filtered = filtered.filter(t => t.date <= end);
-  if(type !== 'all') filtered = filtered.filter(t => t.type === type);
-  if(cat  !== 'all') filtered = filtered.filter(t => t.category === cat);
+  if (start) filtered = filtered.filter(t => t.date >= start);
+  if (end) filtered = filtered.filter(t => t.date <= end);
+  if (typeF !== 'all') filtered = filtered.filter(t => t.type === typeF);
+  if (catF !== 'all') filtered = filtered.filter(t => t.category === catF);
+
   renderTable(filtered);
-  // atualizar gráficos também quando filtrado
-  if(chartsContainer.style.display !== 'none'){
+  updateDashboard(filtered);
+  if (chartsContainer.style.display !== 'none') {
     updateCharts(filtered);
     updateMonthlyChart(filtered);
   }
 }
 
-function updateCharts(data = transactions){
-  const income = data.filter(t => t.type==='income').reduce((a, t) => a + Number(t.amount || 0), 0);
-  const expense = data.filter(t => t.type==='expense').reduce((a, t) => a + Number(t.amount || 0), 0);
+// Adicionar
+function addTransaction() {
+  const desc = document.getElementById('description').value.trim();
+  const amountVal = parseFloat(document.getElementById('amount').value);
+  const typeVal = document.getElementById('type').value;
+  const categoryVal = document.getElementById('category').value;
+  const dateVal = document.getElementById('date').value;
+  if (!desc || isNaN(amountVal) || !dateVal) return alert('Preencha todos os campos!');
+  const data = { description: desc, amount: amountVal, type: typeVal, category: categoryVal, date: dateVal };
+  saveTransaction(data);
+}
+
+// Reset form
+function resetForm() {
+  editMode = false;
+  editKey = null;
+  addTransactionBtn.textContent = 'Registrar';
+  document.getElementById('description').value = '';
+  document.getElementById('amount').value = '';
+  document.getElementById('date').value = '';
+}
+
+// Gráficos
+function updateCharts(data = transactions) {
+  const income = data.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
+  const expense = data.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
+
   const ctx = document.getElementById('chart').getContext('2d');
-  if(window.myChart) window.myChart.destroy();
+  if (window.myChart) window.myChart.destroy();
   window.myChart = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels:['Receitas','Despesas'], datasets:[{ data:[income,expense], backgroundColor:['#2ecc71','#e74c3c'] }] },
+    data: { labels: ['Receitas', 'Despesas'], datasets: [{ data: [income, expense], backgroundColor: ['#2ecc71', '#e74c3c'] }] },
     options: {
       responsive: true,
-      plugins: { legend:{position:'bottom'}, datalabels:{ color:'#fff', formatter:(v,ctx) => `${formatCurrency(v)}\n(${((v/(income+expense))*100 || 0).toFixed(1)}%)` } },
-      cutout: '40%'
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: { color: '#fff', formatter: (value) => `${formatCurrency(value)}\n(${((value/(income+expense))*100 || 0).toFixed(1)}%)` }
+      },
+      cutout: '50%'
     }
   });
 
-  const statusData = { Pago:0,Pendente:0,Atrasado:0 };
-  const statusValue = { Pago:0,Pendente:0,Atrasado:0 };
-  data.forEach(t => { const s = getStatus(t); if(!(s in statusData)) statusData[s]=0; statusData[s]++; statusValue[s] = (statusValue[s]||0) + Number(t.amount||0); });
+  const statusCounts = {};
+  const statusSums = {};
+  data.forEach(t => {
+    const s = getStatus(t);
+    statusCounts[s] = (statusCounts[s] || 0) + 1;
+    statusSums[s] = (statusSums[s] || 0) + t.amount;
+  });
+
   const ctx2 = document.getElementById('status-chart').getContext('2d');
-  if(window.statusChart) window.statusChart.destroy();
+  if (window.statusChart) window.statusChart.destroy();
   window.statusChart = new Chart(ctx2, {
-    type:'doughnut',
-    data:{ labels:Object.keys(statusData), datasets:[{ data:Object.values(statusData), backgroundColor:['#27ae60','#f39c12','#e74c3c'] }] },
-    options:{
-      responsive:true,
-      plugins:{ legend:{position:'bottom'}, datalabels:{ color:'#fff', formatter:(v,ctx) => {
-        const label = ctx.chart.data.labels[ctx.dataIndex];
-        return `${label}\n${v} item(s)\n${formatCurrency(statusValue[label]||0)}`;
-      } } },
-      cutout:'40%'
+    type: 'doughnut',
+    data: { labels: Object.keys(statusCounts), datasets: [{ data: Object.values(statusCounts), backgroundColor: ['#27ae60','#f39c12','#e74c3c'] }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: {
+          color: '#fff',
+          formatter: (count, ctxD) => {
+            const label = ctxD.chart.data.labels[ctxD.dataIndex];
+            return `${label}\n${count} item(s)\n${formatCurrency(statusSums[label]||0)}`;
+          }
+        }
+      },
+      cutout: '50%'
     }
   });
 
   const categories = ['salario','alimentacao','transporte','lazer','outros'];
-  const catValues = categories.map(cat => data.filter(t => t.category === cat && t.type === 'expense').reduce((a,t) => a+Number(t.amount||0), 0));
+  const catLabels = ['Salário','Alimentação','Transporte','Lazer','Outros'];
+  const catValues = categories.map(cat => data.filter(t => t.category === cat && t.type === 'expense').reduce((s, t) => s + t.amount, 0));
+
   const ctx3 = document.getElementById('category-chart').getContext('2d');
-  if(window.categoryChart) window.categoryChart.destroy();
+  if (window.categoryChart) window.categoryChart.destroy();
   window.categoryChart = new Chart(ctx3, {
-    type:'bar',
-    data:{
-      labels:['Salário','Alimentação','Transporte','Lazer','Outros'],
-      datasets:[{ label:'Despesas por Categoria', data:catValues, backgroundColor:['#1abc9c','#3498db','#9b59b6','#e67e22','#e74c3c'] }]
-    },
-    options:{
-      responsive:true,
-      plugins:{ legend:{display:false}, datalabels:{ color:'#000', anchor:'end', align:'top', formatter:v => `${formatCurrency(v)}\n(${((v/(catValues.reduce((a,b)=>a+b,0))*100||0).toFixed(1))}%)` } },
-      scales:{ y:{ beginAtZero:true, ticks:{ callback: value => formatCurrency(value) } } }
+    type: 'bar',
+    data: { labels: catLabels, datasets: [{ label: 'Despesas por Categoria', data: catValues, backgroundColor: ['#1abc9c','#3498db','#9b59b6','#e67e22','#e74c3c'] }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          color: '#000',
+          anchor: 'end',
+          align: 'top',
+          formatter: v => `${formatCurrency(v)}\n(${(v/(catValues.reduce((a,b)=>a+b,0))*100 || 0).toFixed(1)}%)`
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: value => formatCurrency(value) } }
+      }
     }
   });
 }
 
-function updateMonthlyChart(data = transactions){
-  const months=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const incomeMonthly=Array(12).fill(0);
-  const expenseMonthly=Array(12).fill(0);
-  data.forEach(t => { const d = new Date(t.date); if(isNaN(d)) return; const m = d.getMonth(); if(t.type==='income') incomeMonthly[m]+=Number(t.amount||0); else expenseMonthly[m]+=Number(t.amount||0); });
+function updateMonthlyChart(data = transactions) {
+  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const incomeMonthly = Array(12).fill(0);
+  const expenseMonthly = Array(12).fill(0);
+
+  data.forEach(t => {
+    const d = new Date(t.date);
+    if (!isNaN(d)) {
+      const m = d.getMonth();
+      t.type === 'income' ? incomeMonthly[m] += t.amount : expenseMonthly[m] += t.amount;
+    }
+  });
+
   const ctx = document.getElementById('monthly-chart').getContext('2d');
-  if(window.monthlyChart) window.monthlyChart.destroy();
+  if (window.monthlyChart) window.monthlyChart.destroy();
   window.monthlyChart = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels:months,
-      datasets:[
-        { label:'Receitas', data:incomeMonthly, borderColor:'#2ecc71', backgroundColor:'rgba(46,204,113,0.2)', fill:true, tension:0.3 },
-        { label:'Despesas', data:expenseMonthly, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.2)', fill:true, tension:0.3 }
-      ]
-    },
-    options:{
-      responsive:true,
-      plugins:{ legend:{position:'bottom'}, datalabels:{ color:'#000', anchor:'end', align:'top', formatter: v => formatCurrency(v) } },
-      scales:{ y:{ beginAtZero:true, ticks:{ callback: value => formatCurrency(value) } } }
+    type: 'line',
+    data: { labels: months, datasets: [
+      { label: 'Receitas', data: incomeMonthly, borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.2)', fill: true, tension: 0.3 },
+      { label: 'Despesas', data: expenseMonthly, borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.2)', fill: true, tension: 0.3 },
+    ]},
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: { color: '#000', anchor: 'end', align: 'top', formatter: v => formatCurrency(v) }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => formatCurrency(v) } }
+      }
     }
   });
 }
 
-function refreshAll(){
+// Exportar CSV
+function exportCSV() {
+  let csv = 'Descrição,Valor,Tipo,Categoria,Data,Status\n';
+  transactions.forEach(t => {
+    csv += `"${t.description}",${t.amount},"${t.type}","${t.category}","${t.date}","${getStatus(t)}"\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'transacoes.csv';
+  link.click();
+}
+
+// Data padrão filtros
+function setDefaultDateFilters() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  filterStart.value = `${y}-${String(m+1).padStart(2,'0')}-01`;
+  const lastDay = new Date(y, m+1, 0).getDate();
+  filterEnd.value = `${y}-${String(m+1).padStart(2,'0')}-${lastDay}`;
+}
+
+// Refresh
+function refreshAll() {
   renderTable();
   updateDashboard();
-  if(chartsContainer.style.display !== 'none') updateCharts();
-  updateMonthlyChart();
-}
-
-// Eventos UI
-toggleChartsBtn.addEventListener('click', () => {
-  if(chartsContainer.style.display==='none'){
-    chartsContainer.style.display='flex';
-    toggleChartsBtn.textContent = 'Ocultar Gráficos';
+  if (chartsContainer.style.display !== 'none') {
     updateCharts();
     updateMonthlyChart();
-  } else {
-    chartsContainer.style.display='none';
-    toggleChartsBtn.textContent = 'Mostrar Gráficos';
   }
-});
+}
 
+// Eventos
 addTransactionBtn.addEventListener('click', addTransaction);
 exportBtn.addEventListener('click', exportCSV);
 document.getElementById('apply-filters').addEventListener('click', applyFilters);
+toggleChartsBtn.addEventListener('click', () => {
+  const show = chartsContainer.style.display === 'none';
+  chartsContainer.style.display = show ? 'flex' : 'none';
+  toggleChartsBtn.textContent = show ? 'Ocultar Gráficos' : 'Mostrar Gráficos';
+  if (show) {
+    updateCharts();
+    updateMonthlyChart();
+  }
+});
 
-// inicializa
-loadTransactions();
+// Init
+window.onload = () => {
+  setDefaultDateFilters();
+  loadTransactions();
+};
 </script>
+
+
 </body>
 </html>
