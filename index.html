@@ -104,19 +104,19 @@
   <!-- Formulário -->
   <div class="transaction-form" id="tx-form">
     <div>
-      <input type="text" id="description" placeholder="Descrição" required />
-      <div class="hint">Ex.: Conta de Luz, Venda, Pix...</div>
+      <input type="text" id="description" placeholder="Descrição da Dívida" required />
+      <div class="hint"></div>
     </div>
     <div>
-      <input type="number" id="amount" placeholder="Valor" required step="0.01" min="0" />
-      <div class="hint">Use ponto para decimais (ex.: 199.90)</div>
+      <input type="number" id="amount" placeholder="Valor da Dívida (R$)" required step="0.01" min="0" />
+      <div class="hint"></div>
     </div>
     <div>
       <select id="type">
         <option value="income">Receita</option>
         <option value="expense">Despesa</option>
       </select>
-      <div class="hint">Define o impacto no saldo</div>
+      <div class="hint"></div>
     </div>
     <div>
       <select id="category">
@@ -128,24 +128,24 @@
         <option value="lazer">Lazer</option>
         <option value="outros">Outros</option>
       </select>
-      <div class="hint">Categorias dinâmicas nos gráficos</div>
+      <div class="hint"></div>
     </div>
     <div>
       <input type="date" id="date" required />
-      <div class="hint">Data da transação</div>
+      <div class="hint"></div>
     </div>
 
     <!-- Recursos novos: Parcelas e Mensalidade (recorrente) -->
     <div>
-      <input type="number" id="installments" placeholder="Parcelas (opcional)" min="1" />
-      <div class="hint">Se informado, gera N lançamentos mensais</div>
+      <input type="number" id="installments" placeholder="QTD Parcelas (opicional)" min="1" />
+      <div class="hint"></div>
     </div>
     <div>
       <label style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="is-recurring" />
         Tornar mensal (recorrente)
       </label>
-      <div class="hint">Renova automaticamente no próximo mês</div>
+      <div class="hint"></div>
     </div>
 
     <button id="add-transaction">Registrar</button>
