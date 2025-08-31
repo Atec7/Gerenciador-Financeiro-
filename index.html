@@ -71,6 +71,8 @@
     #monthly-chart{ max-height:320px !important; margin-bottom:20px; width:100% !important }
     tfoot td{ font-weight:800 }
 
+    .anual { background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:44px; flex:1 1 360px; min-width:1140px; max-width:520px; font-size: 10px; }
+    
     .pill{ display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:800 }
     .pill.pago{ background:#16a34a1a; color:#22c55e; border:1px solid #22c55e50 }
     .pill.pendente{ background:#f59e0b1a; color:#f59e0b; border:1px solid #f59e0b50 }
@@ -78,16 +80,17 @@
 
     .hint{ font-size:12px; color:var(--text-muted); margin-top:-6px; margin-bottom:8px }
     @media (max-width:700px){ .transaction-form{ grid-template-columns:1fr 1fr } }
+    
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Sistema Financeiro</h1>
+  <h1>Sistema de Controle Financeiro</h1>
   <div class="header-actions">
     <button id="theme-toggle" class="btn secondary" title="Alternar tema (Dark/Light)">🌗 Tema</button>
-    <button id="toggle-charts" class="btn">📈 Mostrar Gráficos</button>
-    <button id="quick-report" class="btn accent">🧾 Relatório Rápido (PDF)</button>
+    <button id="toggle-charts" class="btn secondary">📈 Mostrar Gráficos</button>
+    <button id="quick-report" class="btn accent">🧾 Relatório Todos os Registros (PDF)</button>
   </div>
 </header>
 
@@ -143,7 +146,7 @@
     <div>
       <label style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="is-recurring" />
-        Tornar mensal (recorrente)
+        Tornar mensal
       </label>
       <div class="hint"></div>
     </div>
@@ -155,7 +158,7 @@
   <div class="row-actions">
     <button class="btn" id="export-csv">Exportar CSV</button>
     <button class="btn" id="export-xlsx">Exportar Excel</button>
-    <button class="btn" id="export-pdf">Exportar PDF</button>
+    <button class="btn" id="export-pdf">Exportar PDF (Filtrado)</button>
     <button class="btn secondary" id="backup-local">Backup Local</button>
     <button class="btn secondary" id="restore-local">Restaurar Backup</button>
     <button class="btn danger" id="clear-all">Limpar Tudo</button>
@@ -191,7 +194,7 @@
     <div class="chart-box"><canvas id="category-chart"></canvas></div>
   </div>
 
-  <div class="chart-box" style="margin-bottom:18px;">
+  <div class="anual" style="margin-bottom:18px;">
     <canvas id="monthly-chart"></canvas>
   </div>
 
