@@ -179,6 +179,7 @@
       <option value="lazer">Lazer</option>
       <option value="outros">Outros</option>
     </select>
+    
     <input id="search" class="grow" type="search" placeholder="Buscar por descrição (tempo real)..." />
     <button id="apply-filters">Filtrar</button>
   </div>
@@ -288,17 +289,21 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 }
 function formatDateBR(dateStr) {
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
 }
-function addMonths(dateStr, n){
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  d.setMonth(d.getMonth() + n);
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
+
+function addMonths(dateStr, n) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const newDate = new Date(y, m - 1 + n, d);
+  const ny = newDate.getFullYear();
+  const nm = String(newDate.getMonth() + 1).padStart(2, "0");
+  const nd = String(newDate.getDate()).padStart(2, "0");
+  return `${ny}-${nm}-${nd}`;
 }
+
 function getStatus(t) {
   if (t.type === 'income') return 'Pago';
   if (t.status) return t.status;
