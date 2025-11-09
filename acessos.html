@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - Sistema de Lembretes e Acessos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #283e51, #485563);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 10px;
+      color: #333;
+    }
+    .login-box, .app-container {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 600px;
+      transition: all 0.3s ease;
+    }
+    h1, h2, h3 { text-align: center; margin-bottom: 15px; color: #2c3e50; }
+    input, textarea, button { font-family: 'Roboto', sans-serif; }
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+    textarea { resize: vertical; min-height: 60px; }
+    button {
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: #3498db;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+    button:hover { background: #2980b9; }
+    .btn-ghost { background: transparent; color: #2980b9; border: 1px solid transparent; }
+    .link-btn { background: transparent; border: none; color: #2980b9; cursor: pointer; text-decoration: underline; }
+    .hidden { display: none; }
+    header {
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
+      background: linear-gradient(90deg, #283e51, #485563);
+      color: white;
+      padding: 12px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-radius: 10px 10px 0 0;
+      word-break: break-word;
+    }
+    .container { background: #fff; border-radius: 0 0 10px 10px; padding: 15px; }
+    .section { margin-bottom: 24px; }
+    h3 { border-bottom: 2px solid #eee; padding-bottom: 8px; color: #34495e; margin-bottom: 12px; }
+    .form { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+    .note {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      word-wrap: break-word;
+    }
+    .note .actions { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+    .copy-btn { background: #10b981; padding: 6px 10px; border: none; color: white; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+    .copy-btn:hover { background: #059669; }
+    .danger { background: #ef4444; }
+    .danger:hover { background: #dc2626; }
+    .muted { background: #e5e7eb; color: #111827; }
+    .small { padding:6px 8px; font-size:0.85rem; border-radius:6px; }
+    .flex-row { display:flex; gap:10px; align-items:center; }
+    .grow { flex:1; }
+    @media (max-width:768px){
+      .login-box, .app-container{ max-width:100%; padding:16px; }
+      header { font-size:1rem; padding:10px; }
+      button, input, textarea { font-size:0.95rem; padding:10px; }
+    }
+    @media (max-width:480px){
+      header { font-size:0.95rem; }
+      .note .actions { flex-direction:column; align-items:flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TELA DE LOGIN -->
+  <div class="login-box" id="loginBox">
+    <h1>🔒 Acesso ao Sistema</h1>
+    <input type="password" id="senhaInput" placeholder="Digite a senha" autocomplete="current-password" />
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <input type="checkbox" id="lembrarLogin"> <span> Manter-me conectado</span>
+    </label>
+    <div style="display:flex;gap:8px;">
+      <button id="entrarBtn" class="grow">Entrar</button>
+      <button id="criarSenhaPadraoBtn" class="btn-ghost small" title="Cria chave 'Senha' no banco com valor padrão">Criar/Resetar Senha</button>
+    </div>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL -->
+  <div class="app-container hidden" id="app">
+    <header>
+      <div style="display:flex;gap:10px;align-items:center;"><span>📝 Central de Lembretes e Acessos</span></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="logoutBtn" class="small muted">Logout</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- LEMBRETES -->
+      <div class="section">
+        <h3>Lembretes</h3>
+        <div class="form" id="formLembrete">
+          <input type="text" id="lembreteTitulo" placeholder="Título do lembrete" />
+          <textarea id="lembreteTexto" placeholder="Texto do lembrete"></textarea>
+          <div style="display:flex;gap:8px;">
+            <button id="salvarLembrete" class="grow">Salvar Lembrete</button>
+            <button id="limparLembrete" class="btn-ghost small">Limpar</button>
+          </div>
+        </div>
+        <div id="listaLembretes"></div>
+      </div>
+
+      <!-- ACESSOS -->
+      <div class="section">
+        <h3>Acessos e Senhas</h3>
+        <div class="form" id="formAcesso">
+          <input type="text" id="acessoSistema" placeholder="Sistema / Site" />
+          <input type="text" id="acessoUsuario" placeholder="Usuário / Email" />
+          <input type="text" id="acessoSenha" placeholder="Senha" />
+          <div style="display:flex;gap:8px;">
+            <button id="salvarAcesso" class="grow">Salvar Acesso</button>
+            <button id="limparAcesso" class="btn-ghost small">Limpar</button>
+          </div>
+        </div>
+        <div id="listaAcessos"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script>
+    // ================== CONFIG FIREBASE ==================
+    const firebaseConfig = {
+      apiKey: "AIzaSyDXDB6jbRy3o1eXcdXqmd8zrplDk1IezqM",
+      authDomain: "sistema-financeiro-51295.firebaseapp.com",
+      projectId: "sistema-financeiro-51295",
+      storageBucket: "sistema-financeiro-51295.appspot.com",
+      messagingSenderId: "340721821688",
+      appId: "1:340721821688:web:77485712a056405f5f180d",
+      measurementId: "G-X30NBWCY92",
+      databaseURL: "https://sistema-financeiro-51295-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // ================== ELEMENTOS ==================
+    const loginBox = document.getElementById('loginBox');
+    const app = document.getElementById('app');
+    const senhaInput = document.getElementById('senhaInput');
+    const entrarBtn = document.getElementById('entrarBtn');
+    const lembrarLogin = document.getElementById('lembrarLogin');
+    const criarSenhaPadraoBtn = document.getElementById('criarSenhaPadraoBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    const SENHA_PADRAO = "61892903377"; // padrão caso não exista
+    const senhaRef = db.ref('Senha');
+
+    // ================== GARANTIR EXISTÊNCIA DA SENHA (CRIA SE NÃO EXISTIR) ==================
+    async function garantirSenhaPadrao() {
+      const snap = await senhaRef.get();
+      if (!snap.exists()) {
+        await senhaRef.set(SENHA_PADRAO);
+        return SENHA_PADRAO;
+      }
+      return snap.val();
+    }
+
+    // Botão manual para criar/resetar a senha no banco (útil em testes)
+    criarSenhaPadraoBtn.addEventListener('click', async () => {
+      if (!confirm('Criar/Resetar a senha no banco para o valor padrão?')) return;
+      await senhaRef.set(SENHA_PADRAO);
+      alert('Senha padrão criada/resetada no banco.');
+    });
+
+    // ================== LOGIN ==================
+    window.addEventListener('load', async () => {
+      // Garante que a chave existe ao carregar a página
+      try {
+        await garantirSenhaPadrao();
+      } catch (e) {
+        console.error('Erro garantindo senha padrão:', e);
+      }
+
+      if (localStorage.getItem('logado') === 'true') {
+        showApp();
+      }
+    });
+
+    async function getSenhaBanco() {
+      const snap = await senhaRef.get();
+      if (!snap.exists()) {
+        // se por algum motivo sumir entre as chamadas, recria
+        await senhaRef.set(SENHA_PADRAO);
+        return SENHA_PADRAO;
+      }
+      return snap.val();
+    }
+
+    entrarBtn.addEventListener('click', async () => {
+      const senhaDigitada = senhaInput.value.trim();
+      if (!senhaDigitada) { alert('Digite a senha para entrar.'); return; }
+
+      try {
+        const senhaBanco = await getSenhaBanco();
+        // comparação exata
+        if (senhaDigitada === senhaBanco) {
+          if (lembrarLogin.checked) localStorage.setItem('logado', 'true');
+          showApp();
+          senhaInput.value = '';
+        } else {
+          alert('Senha incorreta! Acesso negado.');
+        }
+      } catch (err) {
+        console.error('Erro ao obter senha do banco:', err);
+        alert('Erro ao verificar senha. Veja console.');
+      }
+    });
+
+    function showApp() {
+      loginBox.classList.add('hidden');
+      app.classList.remove('hidden');
+    }
+    function showLogin() {
+      loginBox.classList.remove('hidden');
+      app.classList.add('hidden');
+    }
+
+    logoutBtn.addEventListener('click', () => {
+      if (!confirm('Deseja realmente fazer logout?')) return;
+      localStorage.removeItem('logado');
+      showLogin();
+    });
+
+    // ================== LEMBRETES ==================
+    const lembreteTitulo = document.getElementById('lembreteTitulo');
+    const lembreteTexto = document.getElementById('lembreteTexto');
+    const salvarLembrete = document.getElementById('salvarLembrete');
+    const limparLembrete = document.getElementById('limparLembrete');
+    const listaLembretes = document.getElementById('listaLembretes');
+
+    salvarLembrete.addEventListener('click', () => {
+      const titulo = lembreteTitulo.value.trim();
+      const texto = lembreteTexto.value.trim();
+      if (!titulo && !texto) { alert('Preencha algo para salvar!'); return; }
+      db.ref('Lembretes').push({ titulo, texto, data: new Date().toISOString() });
+      lembreteTitulo.value = lembreteTexto.value = '';
+    });
+    limparLembrete.addEventListener('click', () => { lembreteTitulo.value = lembreteTexto.value = ''; });
+
+    // renderiza lembretes com ações editar/excluir
+    db.ref('Lembretes').on('value', snapshot => {
+      const val = snapshot.val();
+      listaLembretes.innerHTML = '';
+      if (!val) return;
+      // mostrar mais recentes primeiro
+      Object.entries(val).reverse().forEach(([id, l]) => {
+        const div = document.createElement('div');
+        div.className = 'note';
+        // conteúdo exibido
+        div.innerHTML = `
+          <div><strong>${escapeHtml(l.titulo || 'Sem título')}</strong></div>
+          <div style="margin-top:6px;">${escapeHtml(l.texto || '')}</div>
+          <div class="actions"></div>
+        `;
+        // botões
+        const actions = div.querySelector('.actions');
+
+        const btnEditar = document.createElement('button');
+        btnEditar.className = 'small';
+        btnEditar.textContent = 'Editar';
+        btnEditar.addEventListener('click', () => editarLembrete(id, l));
+
+        const btnExcluir = document.createElement('button');
+        btnExcluir.className = 'small danger';
+        btnExcluir.textContent = 'Excluir';
+        btnExcluir.addEventListener('click', async () => {
+          if (!confirm('Excluir este lembrete?')) return;
+          await db.ref('Lembretes/' + id).remove();
+        });
+
+        actions.appendChild(btnEditar);
+        actions.appendChild(btnExcluir);
+
+        listaLembretes.appendChild(div);
+      });
+    });
+
+    function editarLembrete(id, l) {
+      // cria uma pequena UI de edição modal inline
+      const container = document.createElement('div');
+      container.className = 'note';
+      container.innerHTML = `
+        <input class="edit-titulo" placeholder="Título" />
+        <textarea class="edit-texto" placeholder="Texto"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="save small">Salvar</button>
+          <button class="cancel small btn-ghost">Cancelar</button>
+        </div>
+      `;
+      // preencher valores
+      container.querySelector('.edit-titulo').value = l.titulo || '';
+      container.querySelector('.edit-texto').value = l.texto || '';
+
+      // substitui o item atual no DOM temporariamente
+      // Para simplicidade, localizar o elemento original pelo conteúdo: buscamos o nó que contém o título
+      const notes = Array.from(document.querySelectorAll('#listaLembretes .note'));
+      const original = notes.find(n => n.textContent.includes(l.titulo || '') && n.textContent.includes(l.texto ? l.texto.slice(0,10) : ''));
+      if (original) original.replaceWith(container);
+      else document.getElementById('listaLembretes').prepend(container);
+
+      // salvar edição
+      container.querySelector('.save').addEventListener('click', async () => {
+        const novoTitulo = container.querySelector('.edit-titulo').value.trim();
+        const novoTexto = container.querySelector('.edit-texto').value.trim();
+        await db.ref('Lembretes/' + id).update({ titulo: novoTitulo, texto: novoTexto, data: new Date().toISOString() });
+        // o listener 'on value' irá re-renderizar automaticamente
+      });
+
+      // cancelar -> apenas re-renderização do listener fará o job; aqui tentamos recarregar snapshot simples:
+      container.querySelector('.cancel').addEventListener('click', async () => {
+        const snap = await db.ref('Lembretes').get();
+        // re-render via trigger forçado: chamar o callback manualmente é desnecessário já que o listener está ativo; apenas re-obter o snapshot não muda nada.
+        // Para forçar re-render, podemos remover e re-adicionar o listener, mas o mais simples é recarregar a página pequena:
+        // Mas para evitar reload, apenas re-fetch e re-render manual:
+        const val = snap.val();
+        listaLembretes.innerHTML = '';
+        if (!val) return;
+        Object.entries(val).reverse().forEach(([id2, l2]) => {
+          const div2 = document.createElement('div');
+          div2.className = 'note';
+          div2.innerHTML = `
+            <div><strong>${escapeHtml(l2.titulo || 'Sem título')}</strong></div>
+            <div style="margin-top:6px;">${escapeHtml(l2.texto || '')}</div>
+            <div class="actions"></div>
+          `;
+          const actions2 = div2.querySelector('.actions');
+          const e = document.createElement('button'); e.className='small'; e.textContent='Editar';
+          e.addEventListener('click', () => editarLembrete(id2, l2));
+          const d = document.createElement('button'); d.className='small danger'; d.textContent='Excluir';
+          d.addEventListener('click', async () => { if(confirm('Excluir este lembrete?')) await db.ref('Lembretes/' + id2).remove(); });
+          actions2.appendChild(e); actions2.appendChild(d);
+          listaLembretes.appendChild(div2);
+        });
+      });
+    }
+
+    // ================== ACESSOS ==================
+    const acessoSistema = document.getElementById('acessoSistema');
+    const acessoUsuario = document.getElementById('acessoUsuario');
+    const acessoSenha = document.getElementById('acessoSenha');
+    const salvarAcesso = document.getElementById('salvarAcesso');
+    const limparAcesso = document.getElementById('limparAcesso');
+    const listaAcessos = document.getElementById('listaAcessos');
+
+    salvarAcesso.addEventListener('click', () => {
+      const sistema = acessoSistema.value.trim();
+      const usuario = acessoUsuario.value.trim();
+      const senha = acessoSenha.value.trim();
+      if (!sistema || !usuario || !senha) { alert('Preencha todos os campos!'); return; }
+      db.ref('AcessosESenhas').push({ sistema, usuario, senha, data: new Date().toISOString() });
+      acessoSistema.value = acessoUsuario.value = acessoSenha.value = '';
+    });
+    limparAcesso.addEventListener('click', () => { acessoSistema.value = acessoUsuario.value = acessoSenha.value = ''; });
+
+    db.ref('AcessosESenhas').on('value', snapshot => {
+      const val = snapshot.val();
+      listaAcessos.innerHTML = '';
+      if (!val) return;
+      Object.entries(val).reverse().forEach(([id, a]) => {
+        const div = document.createElement('div');
+        div.className = 'note';
+        // usar input readonly para a senha (visual)
+        div.innerHTML = `
+          <div><strong>${escapeHtml(a.sistema)}</strong></div>
+          <div style="margin-top:6px;"><strong>Usuário:</strong> ${escapeHtml(a.usuario)}</div>
+          <div style="margin-top:6px;">
+            <strong>Senha:</strong>
+            <input type="text" readonly value="${escapeHtml(a.senha)}" style="width:100%;max-width:260px;border:none;background:transparent;font-weight:700;">
+          </div>
+          <div class="actions"></div>
+        `;
+        const actions = div.querySelector('.actions');
+
+        const btnCopiar = document.createElement('button');
+        btnCopiar.className = 'copy-btn small';
+        btnCopiar.textContent = 'Copiar';
+        btnCopiar.addEventListener('click', () => {
+          navigator.clipboard.writeText(a.senha).then(() => {
+            btnCopiar.textContent = 'Copiado!';
+            setTimeout(() => btnCopiar.textContent = 'Copiar', 1200);
+          }).catch(err => alert('Não foi possível copiar: ' + err));
+        });
+
+        const btnEditar = document.createElement('button');
+        btnEditar.className = 'small';
+        btnEditar.textContent = 'Editar';
+        btnEditar.addEventListener('click', () => editarAcesso(id, a));
+
+        const btnExcluir = document.createElement('button');
+        btnExcluir.className = 'small danger';
+        btnExcluir.textContent = 'Excluir';
+        btnExcluir.addEventListener('click', async () => {
+          if (!confirm('Excluir este acesso?')) return;
+          await db.ref('AcessosESenhas/' + id).remove();
+        });
+
+        actions.appendChild(btnCopiar);
+        actions.appendChild(btnEditar);
+        actions.appendChild(btnExcluir);
+
+        listaAcessos.appendChild(div);
+      });
+    });
+
+    function editarAcesso(id, a) {
+      const container = document.createElement('div');
+      container.className = 'note';
+      container.innerHTML = `
+        <input class="edit-sistema" placeholder="Sistema / Site" />
+        <input class="edit-usuario" placeholder="Usuário / Email" />
+        <input class="edit-senha" placeholder="Senha" />
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="save small">Salvar</button>
+          <button class="cancel small btn-ghost">Cancelar</button>
+        </div>
+      `;
+      container.querySelector('.edit-sistema').value = a.sistema || '';
+      container.querySelector('.edit-usuario').value = a.usuario || '';
+      container.querySelector('.edit-senha').value = a.senha || '';
+
+      // substituir no DOM (tentativa de localizar original)
+      const notes = Array.from(document.querySelectorAll('#listaAcessos .note'));
+      const original = notes.find(n => n.textContent.includes(a.sistema) && n.textContent.includes(a.usuario));
+      if (original) original.replaceWith(container);
+      else document.getElementById('listaAcessos').prepend(container);
+
+      container.querySelector('.save').addEventListener('click', async () => {
+        const novoSistema = container.querySelector('.edit-sistema').value.trim();
+        const novoUsuario = container.querySelector('.edit-usuario').value.trim();
+        const novaSenha = container.querySelector('.edit-senha').value.trim();
+        if (!novoSistema || !novoUsuario || !novaSenha) { alert('Preencha todos os campos antes de salvar.'); return; }
+        await db.ref('AcessosESenhas/' + id).update({ sistema: novoSistema, usuario: novoUsuario, senha: novaSenha, data: new Date().toISOString() });
+        // listener atualizará UI
+      });
+
+      container.querySelector('.cancel').addEventListener('click', async () => {
+        const snap = await db.ref('AcessosESenhas').get();
+        const val = snap.val();
+        listaAcessos.innerHTML = '';
+        if (!val) return;
+        Object.entries(val).reverse().forEach(([id2, a2]) => {
+          const div2 = document.createElement('div');
+          div2.className = 'note';
+          div2.innerHTML = `
+            <div><strong>${escapeHtml(a2.sistema)}</strong></div>
+            <div style="margin-top:6px;"><strong>Usuário:</strong> ${escapeHtml(a2.usuario)}</div>
+            <div style="margin-top:6px;">
+              <strong>Senha:</strong> <input type="text" readonly value="${escapeHtml(a2.senha)}" style="width:100%;max-width:260px;border:none;background:transparent;font-weight:700;">
+            </div>
+            <div class="actions"></div>
+          `;
+          const actions2 = div2.querySelector('.actions');
+          const e = document.createElement('button'); e.className='small'; e.textContent='Editar';
+          e.addEventListener('click', () => editarAcesso(id2, a2));
+          const c = document.createElement('button'); c.className='copy-btn small'; c.textContent='Copiar';
+          c.addEventListener('click', () => navigator.clipboard.writeText(a2.senha));
+          const d = document.createElement('button'); d.className='small danger'; d.textContent='Excluir';
+          d.addEventListener('click', async () => { if(confirm('Excluir este acesso?')) await db.ref('AcessosESenhas/' + id2).remove(); });
+          actions2.appendChild(c); actions2.appendChild(e); actions2.appendChild(d);
+          listaAcessos.appendChild(div2);
+        });
+      });
+    }
+
+    // ================== UTILIDADES ==================
+    // função simples para evitar XSS ao inserir texto do DB no innerHTML
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+        .replaceAll('\n', '<br/>');
+    }
+  </script>
+</body>
+</html>
