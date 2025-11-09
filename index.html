@@ -91,6 +91,7 @@
     <button id="theme-toggle" class="btn secondary" title="Alternar tema (Dark/Light)">🌗 Tema</button>
     <button id="toggle-charts" class="btn secondary">📈 Mostrar Gráficos</button>
     <button id="quick-report" class="btn accent">🧾 Relatório Todos os Registros (PDF)</button>
+    <button id="open-access" class="btn accent">🔑 Acessos</button
   </div>
 </header>
 
@@ -792,6 +793,10 @@ window.onload = () => {
   // Gera recorrências após carregar
   setTimeout(applyRecurrences, 600);
 };
+  document.getElementById('open-access').addEventListener('click', () => {
+  window.location.href = 'acessos.html';
+});
+
 </script>
 
 </body>
