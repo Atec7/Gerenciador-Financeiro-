@@ -5,6 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sistema Financeiro Avançado</title>
   <style>
+  .upload-btn {
+  background:#f39c12;
+  color:white;
+  border:none;
+  border-radius:8px;
+  padding:6px 10px;
+  cursor:pointer;
+}
+.upload-btn:hover {background:#e67e22;}
+.proof-icon {
+  width:26px;height:26px;
+  border-radius:50%;
+  display:inline-block;
+  vertical-align:middle;
+  cursor:pointer;
+  background:url('https://cdn-icons-png.flaticon.com/512/892/892692.png') center/cover no-repeat;
+}
+
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
     :root{
       --bg:#f0f2f5; --card:#fff; --accent:#2ecc71; --danger:#e74c3c; --primary:#3498db;
@@ -203,7 +221,14 @@
   <table>
     <thead>
       <tr>
-        <th>Descrição</th><th>Valor</th><th>Tipo</th><th>Categoria</th><th>Data</th><th>Status</th><th>Ações</th>
+        <th>Descrição</th>
+        <th>Valor</th>
+        <th>Tipo</th>
+        <th>Categoria</th>
+        <th>Data</th>
+        <th>Comprovante</th>
+        <th>Status</th>
+        <th>Ações</th>
       </tr>
     </thead>
     <tbody id="transactions-table"></tbody>
@@ -229,7 +254,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 
-<script>
+<script type="module">
 /* ===================== Configuração Firebase (mantida) ===================== */
 const firebaseConfig = {
   apiKey: "AIzaSyDXDB6jbRy3o1eXcdXqmd8zrplDk1IezqM",
@@ -349,6 +374,63 @@ function saveLocal(){
 }
 
 /* ===================== CRUD ===================== */
+// --- Envio de comprovante (mesma lógica do cadastro de produtos) ---
+async function uploadComprovante(key) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) {
+      toast('Nenhum arquivo selecionado.');
+      return;
+    }
+
+    toast('📤 Enviando comprovante, aguarde...');
+
+    try {
+      // === mesma lógica do outro sistema ===
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+
+      if (!data || !data.data || !data.data.url) {
+        console.error('Erro no retorno do Imgbb:', data);
+        toast('❌ Erro ao enviar o comprovante.');
+        return;
+      }
+
+      const imageUrl = data.data.url; // mesmo campo usado no outro código
+
+      // Salva o link no Firebase (ou local se offline)
+      if (useFirebase && db) {
+        await db.ref(`transactions/${key}`).update({ comprovanteUrl: imageUrl });
+      } else {
+        const t = transactions.find(x => x._key === key);
+        if (t) t.comprovanteUrl = imageUrl;
+        saveLocal();
+      }
+
+      // Atualiza interface imediatamente
+      const t = transactions.find(x => x._key === key);
+      if (t) t.comprovanteUrl = imageUrl;
+      renderTable(transactions);
+
+      toast('✅ Comprovante enviado com sucesso!');
+    } catch (err) {
+      console.error('Erro ao enviar comprovante:', err);
+      toast('❌ Falha ao enviar comprovante.');
+    }
+  };
+
+  input.click();
+}
+
 function saveTransaction(data) {
   if (useFirebase && db) {
     if (editMode && editKey) {
@@ -406,32 +488,36 @@ function editTransaction(key) {
 }
 
 /* ===================== Renderização ===================== */
-function renderTable(data = transactions) {
-  transactionsTable.innerHTML = '';
-  const frag = document.createDocumentFragment();
+function renderTable(data=transactions){
+  transactionsTable.innerHTML='';
+  const frag=document.createDocumentFragment();
 
-  data.forEach(t => {
-    const tr = document.createElement('tr');
+  data.forEach(t=>{
+    const tr=document.createElement('tr');
+    let valorClass='';
+    if(t.type==='income')valorClass='income';
+    else if(t.type==='expense')valorClass=getStatus(t)==='Pago'?'income':'expense';
 
-    let valorClass = '';
-    if (t.type === 'income') valorClass = 'income';
-    else if (t.type === 'expense') valorClass = getStatus(t) === 'Pago' ? 'income' : 'expense';
-
-    const status = getStatus(t);
-    const statusHtml = (t.type === 'expense')
-      ? `<select class="status-select" onchange="updateStatus('${t._key}', this.value)">
+    const status=getStatus(t);
+    const statusHtml=t.type==='expense'
+      ? `<select class="status-select" onchange="updateStatus('${t._key}',this.value)">
            <option value="Pendente" ${status==='Pendente'?'selected':''}>Pendente</option>
            <option value="Pago" ${status==='Pago'?'selected':''}>Pago</option>
            <option value="Atrasado" ${status==='Atrasado'?'selected':''}>Atrasado</option>
          </select>`
       : `<span class="pill pago">Pago</span>`;
 
-    tr.innerHTML = `
-      <td>${t.description}${t.isRecurring ? ' <span class="pill secondary">Recorrente</span>' : ''}${t.installmentInfo ? ` <span class="pill secondary">${t.installmentInfo}</span>`:''}</td>
+    const comprovanteHtml=t.comprovanteUrl
+      ? `<span class="proof-icon" title="Ver comprovante" onclick="window.open('${t.comprovanteUrl}','_blank')"></span>`
+      : `<button class="upload-btn" onclick="uploadComprovante('${t._key}')">Enviar</button>`;
+
+    tr.innerHTML=`
+      <td>${t.description}${t.isRecurring?' <span class="pill secondary">Recorrente</span>':''}${t.installmentInfo?` <span class="pill secondary">${t.installmentInfo}</span>`:''}</td>
       <td class="${valorClass}">${formatCurrency(t.amount)}</td>
       <td>${t.type}</td>
       <td>${t.category}</td>
       <td>${formatDateBR(t.date)}</td>
+      <td>${comprovanteHtml}</td>
       <td>${statusHtml}</td>
       <td>
         <button class="btn secondary" onclick="editTransaction('${t._key}')">Editar</button>
@@ -439,9 +525,9 @@ function renderTable(data = transactions) {
       </td>`;
     frag.appendChild(tr);
   });
-
   transactionsTable.appendChild(frag);
 }
+
 function updateDashboard(data = transactions) {
   const income = data.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
   const expense = data.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
