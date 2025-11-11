@@ -109,7 +109,8 @@
     <button id="theme-toggle" class="btn secondary" title="Alternar tema (Dark/Light)">🌗 Tema</button>
     <button id="toggle-charts" class="btn secondary">📈 Mostrar Gráficos</button>
     <button id="quick-report" class="btn accent">🧾 Relatório Todos os Registros (PDF)</button>
-    <button id="open-access" class="btn accent">🔑 Acessos</button
+    <button id="open-access" class="btn accent">🔑 Acessos</button>
+    <button id="open-comprovantes">Lançar Comprovantes</button>
   </div>
 </header>
 
@@ -882,7 +883,13 @@ window.onload = () => {
   document.getElementById('open-access').addEventListener('click', () => {
   window.location.href = 'acessos.html';
 });
+const openComprovantesBtn = document.getElementById('open-comprovantes');
 
+if (openComprovantesBtn) {
+  openComprovantesBtn.addEventListener('click', () => {
+    window.location.href = 'comprovantes.html';
+  });
+}
 </script>
 
 </body>
