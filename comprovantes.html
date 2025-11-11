@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Painel de Comprovantes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Botões */
+.upload-btn { background:#f39c12; color:white; border:none; border-radius:8px; padding:6px 10px; cursor:pointer; margin-right:4px; }
+.upload-btn:hover { background:#e67e22; }
+.delete-btn { background:#e74c3c; color:white; border:none; border-radius:8px; padding:6px 10px; cursor:pointer; }
+.delete-btn:hover { background:#c0392b; }
+.view-btn { background:#3498db; color:white; border:none; border-radius:8px; padding:6px 10px; cursor:pointer; margin-right:4px; }
+.view-btn:hover { background:#1d6fa5; }
+
+/* Fontes e cores */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+:root{ --bg:#f0f2f5; --card:#fff; --accent:#2ecc71; --danger:#e74c3c; --primary:#3498db; --text:#333; --text-muted:#555; --thead:#2c3e50; --stripe:#f2f2f2; --shadow:0 4px 15px rgba(0,0,0,0.1); }
+*{box-sizing:border-box}
+body{margin:0; font-family:'Roboto',sans-serif; background:var(--bg); color:var(--text);}
+header{ background: linear-gradient(90deg,#0f2027,#203a43,#2c5364); color:#fff; padding:16px 20px; display:flex; gap:12px; align-items:center; justify-content:space-between; }
+header h1{font-size:22px; margin:0; font-weight:700;}
+.header-actions{display:flex; flex-wrap:wrap; gap:8px}
+.btn{ background:var(--primary); color:#fff; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; box-shadow:var(--shadow); display:inline-flex; align-items:center; gap:8px; font-weight:700 }
+.btn.secondary{ background:#64748b }
+.btn.accent{ background:#2ecc71 }
+.btn.danger{ background:#e74c3c }
+.btn:hover{ filter:brightness(.95) }
+.container{ max-width:1200px; margin:auto; padding:20px; }
+
+/* Dashboard de cards */
+.dashboard{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:20px;
+  margin-bottom:20px;
+}
+.card{
+  background:var(--card);
+  border-radius:14px;
+  box-shadow:var(--shadow);
+  padding:18px;
+  text-align:center;
+  transition: transform .2s;
+}
+.card:hover{ transform:translateY(-4px);}
+.card h3{ margin:0 0 8px; font-size:14px; color:var(--text-muted);}
+.card p{ font-size:22px; font-weight:800; margin:0;}
+
+/* Filtros */
+.filters{ display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 18px; align-items:center; }
+.filters input, .filters select, .filters button{ padding:8px; border-radius:10px; border:1px solid #2b2f3680; background:transparent; color:var(--text) }
+.filters .grow{ flex:1 1 150px; min-width:120px; }
+
+/* Tabela */
+table{ width:100%; border-collapse:collapse; background:var(--card); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); margin-bottom:16px }
+th, td{ padding:12px; text-align:left; vertical-align:middle }
+th{ background:var(--thead); color:white; font-weight:800 }
+tr:nth-child(even){ background:var(--stripe) }
+.income{ color:#22c55e; font-weight:800 }
+.expense{ color:#ef4444; font-weight:800 }
+.status-select{ border:none; font-weight:700; width:100%; background:transparent; cursor:pointer; color:inherit }
+
+/* Progress */
+#progress-container{ display:none; margin-top:10px; }
+#progress-bar{ width:0%; height:20px; background:var(--primary); border-radius:6px; transition:0.3s; }
+#progress-text{ display:block; margin-top:4px; font-size:13px }
+
+/* Pills */
+.pill{ display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; font-weight:800 }
+.pill.pago{ background:#16a34a1a; color:#22c55e; border:1px solid #22c55e50 }
+.pill.pendente{ background:#f59e0b1a; color:#f59e0b; border:1px solid #f59e0b50 }
+.pill.atrasado{ background:#ef44441a; color:#ef4444; border:1px solid #ef444450 }
+
+/* Responsividade */
+@media(max-width:600px){
+  .dashboard{ grid-template-columns:1fr; }
+  .filters{ flex-direction:column; align-items:stretch; }
+  .filters .grow{ width:100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Painel de Comprovantes</h1>
+  <div class="header-actions">
+    <button class="btn secondary" onclick="window.location='index.html'">Voltar</button>
+  </div>
+</header>
+
+<div class="container">
+<div class="dashboard">
+  <div class="card"><h3>Total de gastos</h3><p id="total-paid-card">0</p></div>
+  <div class="card"><h3>Média diária de gastos</h3><p id="avg-daily-card">0</p></div>
+  <div class="card"><h3>Total de entradas</h3><p id="total-entry-card">0</p></div>
+  <div class="card"><h3>Média diária de entradas</h3><p id="avg-daily-entry-card">0</p></div>
+  <div class="card"><h3>Comprovantes anexados</h3><p id="percent-card">0%</p></div>
+  <div class="card"><h3>Percentual gasto diário</h3><p id="daily-spent-percent-card">0%</p></div>
+</div>
+
+<div class="filters">
+  <button class="btn" onclick="setPeriod('current')">Este mês</button>
+  <button class="btn" onclick="setPeriod('last')">Mês passado</button>
+  <button class="btn" onclick="setPeriod('next')">Próximo mês</button>
+  <input type="date" id="filter-start" class="grow">
+  <input type="date" id="filter-end" class="grow">
+  <button id="apply-filters" class="btn accent">Filtrar</button>
+  <button id="export-pdf" class="btn accent">Exportar PDF</button>
+</div>
+
+<div id="progress-container">
+  <div id="progress-bar"></div>
+  <span id="progress-text">Carregando...</span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Descrição</th>
+      <th>Valor</th>
+      <th>Tipo</th>
+      <th>Data Prevista Pagamento</th>
+      <th>Status Pagamento</th>
+      <th>Status Comprovante</th>
+      <th>Comprovante</th>
+    </tr>
+  </thead>
+  <tbody id="transactions-table"></tbody>
+</table>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
+import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDXDB6jbRy3o1eXcdXqmd8zrplDk1IezqM",
+  authDomain: "sistema-financeiro-51295.firebaseapp.com",
+  databaseURL: "https://sistema-financeiro-51295-default-rtdb.firebaseio.com",
+  projectId: "sistema-financeiro-51295",
+  storageBucket: "sistema-financeiro-51295.appspot.com",
+  messagingSenderId: "340721821688",
+  appId: "1:340721821688:web:77485712a056405f5f180d",
+  measurementId: "G-X30NBWCY92"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+let transactions = [];
+
+const table = document.getElementById('transactions-table');
+const progressContainer = document.getElementById('progress-container');
+const progressBar = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
+
+const percentCard = document.getElementById('percent-card');
+const totalPaidCard = document.getElementById('total-paid-card');
+const avgDailyCard = document.getElementById('avg-daily-card');
+const totalEntryCard = document.getElementById('total-entry-card');
+const avgDailyEntryCard = document.getElementById('avg-daily-entry-card');
+const dailySpentPercentCard = document.getElementById('daily-spent-percent-card');
+
+// Data inicial
+function setInitialDates(){
+  const today = new Date();
+  document.getElementById('filter-start').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+  document.getElementById('filter-end').value = new Date(today.getFullYear(), today.getMonth()+1, 0).toISOString().slice(0,10);
+}
+setInitialDates();
+
+function formatBRDate(dateStr){
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('pt-BR');
+}
+
+function calculatePercent(data){
+  if(!data.length) return 0;
+  const withProof = data.filter(t=>t.comprovanteUrl).length;
+  return Math.round((withProof/data.length)*100);
+}
+
+function calculateTotals(data){
+  const totalPaid = data.filter(t=>t.status==='Pago' && t.type==='expense').reduce((a,b)=>a+b.amount,0);
+  const totalEntry = data.filter(t=>t.type==='income').reduce((a,b)=>a+b.amount,0);
+  const start = new Date(document.getElementById('filter-start').value);
+  const end = new Date(document.getElementById('filter-end').value);
+  const days = Math.max((end-start)/(1000*60*60*24)+1,1);
+  const avgPerDay = data.filter(t=>t.type==='expense').reduce((a,b)=>a+b.amount,0)/days;
+  const avgEntryPerDay = totalEntry/days;
+  const dailySpentPercent = avgEntryPerDay>0?Math.round((avgPerDay/avgEntryPerDay)*100):0;
+  return { totalPaid, avgPerDay, totalEntry, avgEntryPerDay, dailySpentPercent };
+}
+
+function updateCards(data){
+  percentCard.textContent = calculatePercent(data)+'%';
+  const totals = calculateTotals(data);
+  totalPaidCard.textContent = 'R$ '+totals.totalPaid.toFixed(2);
+  avgDailyCard.textContent = 'R$ '+totals.avgPerDay.toFixed(2);
+  totalEntryCard.textContent = 'R$ '+totals.totalEntry.toFixed(2);
+  avgDailyEntryCard.textContent = 'R$ '+totals.avgEntryPerDay.toFixed(2);
+  dailySpentPercentCard.textContent = totals.dailySpentPercent+'%';
+}
+
+function renderTable(data){
+  table.innerHTML='';
+  data.forEach(t=>{
+    const statusClass = t.comprovanteUrl ? 'pill pago' : 'pill pendente';
+    const paymentClass = t.status==='Pago'?'pill pago':(t.status==='Atrasado'?'pill atrasado':'pill pendente');
+    const proofHtml = t.comprovanteUrl
+      ? `<button class="view-btn" onclick="window.open('${t.comprovanteUrl}','_blank')">Visualizar</button>
+         <button class="delete-btn" onclick="deleteComprovante('${t._key}')">Excluir</button>`
+      : `<button class="upload-btn" onclick="uploadComprovante('${t._key}')">Enviar</button>`;
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td>${t.description}</td>
+      <td>${t.amount.toFixed(2)}</td>
+      <td class="${t.type}">${t.type}</td>
+      <td>${formatBRDate(t.date)}</td>
+      <td><span class="${paymentClass}">${t.status}</span></td>
+      <td><span class="${statusClass}">${t.comprovanteUrl?'Anexado':'Pendente'}</span></td>
+      <td>${proofHtml}</td>
+    `;
+    table.appendChild(tr);
+  });
+  updateCards(data);
+}
+
+function filterTransactions(){
+  const start = document.getElementById('filter-start').value;
+  const end = document.getElementById('filter-end').value;
+  let filtered = transactions.slice();
+  if(start) filtered = filtered.filter(t => t.date >= start);
+  if(end) filtered = filtered.filter(t => t.date <= end);
+  renderTable(filtered);
+  return filtered;
+}
+document.getElementById('apply-filters').addEventListener('click', filterTransactions);
+
+// Filtros rápidos
+function setPeriod(period){
+  const today = new Date();
+  let start,end;
+  if(period==='current'){ start=new Date(today.getFullYear(),today.getMonth(),1); end=new Date(today.getFullYear(),today.getMonth()+1,0); }
+  if(period==='last'){ start=new Date(today.getFullYear(),today.getMonth()-1,1); end=new Date(today.getFullYear(),today.getMonth(),0); }
+  if(period==='next'){ start=new Date(today.getFullYear(),today.getMonth()+1,1); end=new Date(today.getFullYear(),today.getMonth()+2,0); }
+  document.getElementById('filter-start').value = start.toISOString().slice(0,10);
+  document.getElementById('filter-end').value = end.toISOString().slice(0,10);
+  filterTransactions();
+}
+
+// Firebase
+function loadTransactions(){
+  const transactionsRef = ref(db,'transactions');
+  onValue(transactionsRef, snapshot=>{
+    const val = snapshot.val();
+    transactions = val ? Object.entries(val).map(([k,v])=>({ _key:k, ...v })) : [];
+    filterTransactions();
+  });
+}
+
+window.uploadComprovante = async function(key){
+  const input = document.createElement('input'); input.type='file'; input.accept='image/*';
+  input.onchange = async ()=>{
+    const file = input.files[0]; if(!file) return;
+    progressContainer.style.display='block'; progressBar.style.width='0%'; progressText.textContent='Carregando...';
+    let progress=0; const interval=setInterval(()=>{progress+=15;if(progress>100)progress=100;progressBar.style.width=progress+'%';},200);
+    const formData = new FormData(); formData.append('image',file);
+    const res=await fetch(`https://api.imgbb.com/1/upload?key=95bb16ee776d7e20f26857cec98bd372`,{method:'POST',body:formData});
+    const json=await res.json(); const url=json.data.display_url;
+    await update(ref(db,`transactions/${key}`),{comprovanteUrl:url});
+    clearInterval(interval); progressBar.style.width='100%'; progressText.textContent='Comprovante anexado!';
+    setTimeout(()=>progressContainer.style.display='none',1500);
+  };
+  input.click();
+}
+
+window.deleteComprovante = async function(key){
+  if(!confirm('Deseja realmente excluir o comprovante?')) return;
+  await update(ref(db, `transactions/${key}`), { comprovanteUrl:null });
+}
+
+document.getElementById('export-pdf').addEventListener('click', async()=>{
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p','pt','a4');
+  const filtered = filterTransactions();
+  let y=40;
+  doc.setFontSize(18); doc.text("Relatório de Comprovantes",40,y); y+=25;
+  for(const t of filtered){
+    doc.setFontSize(12);
+    doc.text(`Descrição: ${t.description}`,40,y); y+=14;
+    doc.text(`Valor: R$ ${t.amount.toFixed(2)}`,40,y); y+=14;
+    doc.text(`Tipo: ${t.type}`,40,y); y+=14;
+    doc.text(`Data Prevista Pagamento: ${formatBRDate(t.date)}`,40,y); y+=14;
+    doc.text(`Status Pagamento: ${t.status}`,40,y); y+=14;
+    doc.text(`Status Comprovante: ${t.comprovanteUrl?'Anexado':'Pendente'}`,40,y); y+=14;
+    if(t.comprovanteUrl){
+      try{
+        const imgData = await fetch(t.comprovanteUrl).then(r=>r.blob()).then(b=>new Promise(r=>{const fr=new FileReader();fr.onloadend=()=>r(fr.result);fr.readAsDataURL(b);}));
+        doc.addImage(imgData,'JPEG',40,y,250,150);
+        y+=160;
+      }catch(e){}
+    }
+    y+=10; if(y>700){ doc.addPage(); y=40; }
+  }
+  doc.save(`comprovantes_${new Date().toISOString().slice(0,10)}.pdf`);
+});
+
+loadTransactions();
+</script>
+</body>
+  </html>
+  
