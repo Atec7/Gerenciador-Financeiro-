@@ -5,6 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sistema Financeiro Avançado</title>
   <style>
+    /* Estilos da Tela de Login */
+#login-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: radial-gradient(circle, #1a2a3a 0%, #0f141a 100%);
+  z-index: 99999; display: flex; align-items: center; justify-content: center;
+}
+.login-box {
+  background: var(--card); padding: 40px; border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; width: 340px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.login-box h2 { margin-top: 0; color: var(--primary); font-size: 24px; margin-bottom: 20px; }
+.login-box input[type="text"], .login-box input[type="password"] {
+  width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px;
+  border: 1px solid #2b3a4a; background: #1c2630; color: white; outline: none;
+}
+.remember-container {
+  display: flex; align-items: center; gap: 8px; color: var(--text-muted);
+  font-size: 14px; margin: 15px 0; cursor: pointer; user-select: none;
+}
+.remember-container input { cursor: pointer; width: 16px; height: 16px; }
+.login-box button {
+  width: 100%; padding: 12px; border-radius: 8px; border: none;
+  background: var(--accent); color: white; font-weight: bold;
+  cursor: pointer; font-size: 16px; transition: 0.2s;
+}
+.login-box button:hover { filter: brightness(1.1); transform: scale(1.02); }
+#login-error { color: var(--danger); font-size: 13px; margin-top: 15px; display: none; font-weight: bold; }
+.hidden-login { display: none !important; }
+
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
     :root{
       --bg:#f0f2f5; --card:#fff; --accent:#2ecc71; --danger:#e74c3c; --primary:#3498db;
@@ -230,7 +260,78 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>Acesso Restrito</h2>
+    <input type="text" id="user-login" placeholder="Usuário">
+    <input type="password" id="pass-login" placeholder="Senha">
+    
+    <label class="remember-container">
+      <input type="checkbox" id="remember-check"> Lembrar Usuário e Senha
+    </label>
 
+    <button id="btn-entrar">Acessar Sistema</button>
+    <p id="login-error">Dados incorretos! Tente novamente.</p>
+  </div>
+</div>
+
+<script>
+(function() {
+  const overlay = document.getElementById('login-overlay');
+  const userIn = document.getElementById('user-login');
+  const passIn = document.getElementById('pass-login');
+  const check = document.getElementById('remember-check');
+  const btn = document.getElementById('btn-entrar');
+  const error = document.getElementById('login-error');
+
+  function autenticar() {
+    const u = userIn.value;
+    const p = passIn.value;
+
+    if (u === "ARNALDO" && p === "61892903377") {
+      overlay.classList.add('hidden-login');
+      // Salva que está logado nesta aba
+      sessionStorage.setItem('sessao_ativa', 'true');
+
+      // Lógica da Caixinha "Lembrar"
+      if (check.checked) {
+        localStorage.setItem('pref_user', u);
+        localStorage.setItem('pref_pass', p);
+        localStorage.setItem('pref_remember', 'true');
+      } else {
+        localStorage.removeItem('pref_user');
+        localStorage.removeItem('pref_pass');
+        localStorage.removeItem('pref_remember');
+      }
+    } else {
+      error.style.display = 'block';
+      passIn.value = '';
+      passIn.focus();
+    }
+  }
+
+  // Ao abrir o sistema:
+  window.addEventListener('DOMContentLoaded', () => {
+    // 1. Se já logou nesta aba antes, libera direto
+    if (sessionStorage.getItem('sessao_ativa') === 'true') {
+      overlay.classList.add('hidden-login');
+    } 
+    // 2. Se não, verifica se tem dados salvos na "caixinha" para preencher
+    else if (localStorage.getItem('pref_remember') === 'true') {
+      userIn.value = localStorage.getItem('pref_user');
+      passIn.value = localStorage.getItem('pref_pass');
+      check.checked = true;
+    }
+  });
+
+  btn.addEventListener('click', autenticar);
+  
+  // Atalho: apertar Enter para entrar
+  [userIn, passIn].forEach(input => {
+    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') autenticar(); });
+  });
+})();
+</script>
 <script>
 /* ===================== Configuração Firebase (mantida) ===================== */
 const firebaseConfig = {
