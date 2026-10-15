@@ -1,0 +1,137 @@
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    color: #333;
+}
+
+.container {
+    max-width: 1000px;
+    width: 90%;
+    background: #fff;
+    padding: 20px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    margin: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+input, select, button {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+button {
+    background-color: #28a745;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+table, th, td {
+    border: 1px solid #ddd;
+}
+
+th, td {
+    padding: 10px;
+    text-align: center;
+}
+
+.paid {
+    background-color: #d4edda;
+}
+
+.summary {
+    margin-bottom: 20px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.transactions, .charts {
+    margin-top: 20px;
+}
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.chart {
+    margin-top: 20px;
+}
+
+/* Estilos responsivos */
+@media (max-width: 767px) {
+    .form-group {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    input, select, button {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    table, th, td {
+        font-size: 12px;
+    }
+
+    th, td {
+        padding: 8px;
+    }
+
+    .summary p {
+        margin: 5px 0;
+    }
+
+    .container {
+        padding: 10px;
+        margin: 10px;
+    }
+
+    /* Ajustes para botões laterais */
+    table td button {
+        padding: 5px;
+        margin: 2px;
+        font-size: 12px;
+    }
+
+    .chart {
+        overflow-x: auto;
+    }
+
+    .chart canvas {
+        max-width: 100%;
+        height: auto;
+    }
+}
