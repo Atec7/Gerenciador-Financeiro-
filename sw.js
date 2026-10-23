@@ -1,11 +1,11 @@
 /* Service worker do Fin: abre offline e instala como app.
    Arquivos do app: rede primeiro (sempre a versão mais nova), cache como reserva.
    Bibliotecas de CDN: cache primeiro (são versionadas). */
-const VERSION = 'fin-v2.2.0';
+const VERSION = 'fin-v2.3.0';
 const APP_FILES = [
   './', './index.html', './manifest.webmanifest',
   './assets/css/app.css',
-  './assets/js/core.js', './assets/js/data.js', './assets/js/ui.js', './assets/js/app.js',
+  './assets/js/core.js', './assets/js/rates.js', './assets/js/data.js', './assets/js/ui.js', './assets/js/app.js',
   './assets/js/views/home.js', './assets/js/views/transactions.js', './assets/js/views/bills.js',
   './assets/js/views/budget.js', './assets/js/views/invest.js', './assets/js/views/goals.js', './assets/js/views/receipts.js',
   './assets/js/views/notes.js', './assets/js/views/vault.js', './assets/js/views/tools.js',

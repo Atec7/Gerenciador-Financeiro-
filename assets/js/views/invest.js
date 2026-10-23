@@ -4,11 +4,18 @@
    também é possível cadastrar e movimentar direto nesta tela. */
 
 const pctFmt = v => (v >= 0 ? '+' : '') + fmtNum(v * 100, 2) + '%';
+/** de onde vieram as taxas usadas no cálculo automático */
+function ratesNote() {
+  const st = Rates.status(), last = Rates.lastDate();
+  if (Rates.loading && st === 'estimado') return 'buscando taxas no Banco Central…';
+  if (st === 'estimado') return 'taxas aproximadas (sem conexão com o Banco Central)';
+  return `CDI/Selic/IPCA do Banco Central até ${fmtDate(last)}`;
+}
 
 Views.invest = {
   render(el) {
     const list = DB.invest.map(i => ({ ...i, st: Invest.stats(i) })).sort((a, b) => b.st.saldo - a.st.saldo);
-    const aplicado = sum(list, i => i.st.aplicado), saldo = sum(list, i => i.st.saldo), rend = saldo - aplicado;
+    const aplicado = sum(list, i => i.st.aplicado), saldo = sum(list, i => i.st.saldo), rend = saldo - aplicado, irTot = sum(list, i => i.st.ir);
     const ym = curYM(), mesMov = sum(list.flatMap(i => i.st.movs).filter(m => (m.data || '').startsWith(ym)), m => m.valor);
     const unlinked = DB.tx.filter(t => t.category === 'investimentos' && !t.investId);
     const byType = {};
@@ -18,14 +25,14 @@ Views.invest = {
 
     el.innerHTML = `
       <div class="page-head">
-        <div style="flex:1;min-width:200px"><h1>Investimentos</h1><p>Carteira consolidada · aportes do extrato entram automaticamente</p></div>
+        <div style="flex:1;min-width:200px"><h1>Investimentos</h1><p>Carteira consolidada · rendimento calculado automaticamente${list.some(i => i.st.auto) ? ` · <span class="faint">${ratesNote()}</span>` : ''}</p></div>
         ${unlinked.length ? `<button class="btn" data-iv="import">${icon('download')} Importar do extrato (${unlinked.length})</button>` : ''}
         <button class="btn primary" data-iv="new">${icon('plus')} Novo investimento</button>
       </div>
       <div class="stats" style="margin-bottom:12px">
         <div class="stat"><small>Total aplicado</small><b>${money(aplicado)}</b><em>aportes − resgates</em></div>
         <div class="stat"><small>Saldo atual</small><b>${money(saldo)}</b><em>${list.length} investimento(s)</em></div>
-        <div class="stat"><small>Rendimento</small><b class="${rend >= 0 ? 'pos' : 'neg'}">${money(rend)}</b><em>${aplicado > 0 ? pctFmt(rend / aplicado) : '—'} sobre o aplicado</em></div>
+        <div class="stat"><small>Rendimento</small><b class="${rend >= 0 ? 'pos' : 'neg'}">${money(rend)}</b><em>${aplicado > 0 ? pctFmt(rend / aplicado) : '—'} sobre o aplicado${irTot > 0 ? ` · IR est. ${fmt(irTot)}` : ''}</em></div>
         <div class="stat"><small>Movimentação no mês</small><b class="${mesMov >= 0 ? '' : 'neg'}">${money(mesMov)}</b><em>${ymLabel(ym)}</em></div>
       </div>
       ${list.length ? `
@@ -37,7 +44,7 @@ Views.invest = {
               <div class="avatar" style="color:${colorFor(i.tipo || 'Outro')}">${icon('up')}</div>
               <div class="item-body">
                 <div class="item-title">${esc(i.nome)}</div>
-                <div class="item-sub">${esc(i.tipo || 'Outro')}${i.instituicao ? ' · ' + esc(i.instituicao) : ''}${i.taxa ? ' · ' + esc(i.taxa) : ''}</div>
+                <div class="item-sub">${esc(i.tipo || 'Outro')}${i.instituicao ? ' · ' + esc(i.instituicao) : ''} · ${i.st.auto ? esc(Rentab.label(i.st.rule)) : i.taxa ? esc(i.taxa) : 'saldo manual'}</div>
               </div>
               <div class="item-end">
                 <span class="item-amount">${money(i.st.saldo)}</span>
@@ -79,15 +86,20 @@ Views.invest = {
       body: `
         <p class="muted" style="font-size:13px;margin-bottom:12px">${esc(inv.tipo || 'Outro')}${inv.instituicao ? ' · ' + esc(inv.instituicao) : ''}${inv.taxa ? ' · ' + esc(inv.taxa) : ''}${inv.criado ? ' · desde ' + fmtDate(inv.criado) : ''}</p>
         <div class="result">
+          <div class="row"><span class="muted">Rentabilidade</span><b>${st.auto ? `${esc(Rentab.label(st.rule))}${st.anual != null ? ` <span class="faint">≈ ${fmtNum(st.anual * 100, 2)}% a.a. hoje</span>` : ''}` : 'Não calculada automaticamente'}</b></div>
           <div class="row"><span class="muted">Total aplicado</span><b class="num">${money(st.aplicado)}</b></div>
-          <div class="row"><span class="muted">Rendimento</span><b class="num ${st.rend >= 0 ? 'pos' : 'neg'}">${money(st.rend)} ${st.aplicado > 0 ? `(${pctFmt(st.pct)})` : ''}</b></div>
-          <div class="row total"><span>Saldo atual</span><b class="num">${money(st.saldo)}</b></div>
-          ${inv.saldoEm ? `<div class="faint" style="font-size:12px">Saldo informado em ${fmtDate(inv.saldoEm.slice(0, 10))}</div>` : ''}
+          <div class="row"><span class="muted">Rendimento bruto</span><b class="num ${st.rend >= 0 ? 'pos' : 'neg'}">${money(st.rend)} ${st.aplicado > 0 ? `(${pctFmt(st.pct)})` : ''}</b></div>
+          ${st.ir > 0 ? `<div class="row"><span class="muted">IR estimado no resgate</span><b class="num neg">− ${money(st.ir)}</b></div>` : ''}
+          <div class="row total"><span>Saldo atual${st.auto ? ' (bruto)' : ''}</span><b class="num">${money(st.saldo)}</b></div>
+          ${st.ir > 0 ? `<div class="row"><span class="muted">Líquido estimado</span><b class="num">${money(st.liquido)}</b></div>` : ''}
+          <div class="faint" style="font-size:12px">${st.auto
+            ? `Calculado automaticamente${inv.saldoEm ? ` a partir do saldo informado em ${fmtDate(inv.saldoEm.slice(0, 10))}` : ' desde cada aporte'} · ${ratesNote()}`
+            : `${inv.saldoEm ? `Saldo informado em ${fmtDate(inv.saldoEm.slice(0, 10))}. ` : ''}Para calcular sozinho, edite e preencha a rentabilidade (ex.: 110% do CDI, IPCA + 6%, 12% a.a.). Renda variável depende do mercado: atualize o saldo manualmente.`}</div>
         </div>
         <div class="row wrap mt">
           <button class="btn sm primary" data-d="dep">${icon('plus', 'i-sm')} Aporte</button>
           <button class="btn sm" data-d="wd">${icon('minus', 'i-sm')} Resgate</button>
-          <button class="btn sm" data-d="bal">${icon('refresh', 'i-sm')} Atualizar saldo</button>
+          <button class="btn sm" data-d="bal">${icon('refresh', 'i-sm')} ${st.auto ? 'Corrigir saldo' : 'Atualizar saldo'}</button>
           <span class="spacer"></span>
           <button class="icon-btn sm" data-d="edit" title="Editar">${icon('edit', 'i-sm')}</button>
           <button class="icon-btn sm" data-d="del" title="Excluir">${icon('trash', 'i-sm')}</button>
@@ -130,7 +142,8 @@ Views.invest = {
           <div class="field"><label for="if-t">Tipo</label><select id="if-t">${INVEST_TYPES.map(t => `<option ${(inv?.tipo || 'CDB / LCI / LCA') === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
           <div class="field"><label for="if-i">Instituição</label><input id="if-i" value="${esc(inv?.instituicao || '')}" placeholder="Banco / corretora"></div>
         </div>
-        <div class="field"><label for="if-x">Rentabilidade contratada (opcional)</label><input id="if-x" value="${esc(inv?.taxa || '')}" placeholder="Ex.: 110% do CDI, IPCA + 6%"></div>
+        <div class="field"><label for="if-x">Rentabilidade contratada</label><input id="if-x" value="${esc(inv?.taxa || '')}" placeholder="Ex.: 110% do CDI, IPCA + 6%, CDI + 1,5%, 12% a.a.">
+          <span class="hint" id="if-xh"></span></div>
         ${inv ? '' : `
         <div class="fields-2">
           <div class="field"><label for="if-v">Valor inicial (opcional)</label><input id="if-v" inputmode="decimal" placeholder="0,00"></div>
@@ -139,7 +152,16 @@ Views.invest = {
         <label class="switch"><input type="checkbox" id="if-tx"><i></i>Lançar o valor inicial no extrato (sai do saldo)</label>`}
         <div class="field mt"><label for="if-o">Observação</label><textarea id="if-o" rows="2" style="min-height:56px">${esc(inv?.obs || '')}</textarea></div>`,
       foot: `<button class="btn primary" data-if>Salvar</button>`,
-      onMount: el => el.querySelector('[data-if]').onclick = async () => {
+      onMount: el => {
+        // mostra como a rentabilidade digitada será entendida
+        const hint = () => {
+          const r = Rentab.rule({ nome: $('#if-n', el).value, tipo: $('#if-t', el).value, taxa: $('#if-x', el).value });
+          const a = Rentab.annualNow(r);
+          $('#if-xh', el).textContent = r ? `Cálculo automático: ${Rentab.label(r)}${a != null ? ` (≈ ${fmtNum(a * 100, 2)}% a.a. hoje)` : ''}`
+            : 'Sem cálculo automático: o rendimento vem do saldo que você informar (renda variável, fundos…)';
+        };
+        ['#if-n', '#if-t', '#if-x'].forEach(q => $(q, el).addEventListener('input', hint)); hint();
+        el.querySelector('[data-if]').onclick = async () => {
         const nome = $('#if-n', el).value.trim(); if (!nome) return toast('Informe o nome', 'err');
         const data = { nome, tipo: $('#if-t', el).value, instituicao: $('#if-i', el).value.trim() || null, taxa: $('#if-x', el).value.trim() || null, obs: $('#if-o', el).value.trim() || null };
         if (inv) { await Invest.save(inv._key, data); Sheet.close(); return toast('Investimento atualizado'); }
@@ -153,6 +175,7 @@ Views.invest = {
         }
         upd[`Investimentos/${id}`] = clean(node);
         await Store.multi(upd); Sheet.close(); toast('Investimento cadastrado');
+        };
       }
     });
   },
@@ -190,13 +213,20 @@ Views.invest = {
     Sheet.open({
       title: `Atualizar saldo · ${esc(inv.nome)}`,
       body: `
-        <p class="muted" style="font-size:13px;margin-bottom:10px">Informe o saldo que aparece hoje no banco/corretora. O rendimento é calculado pela diferença para o total aplicado (${money(st.aplicado)}).</p>
+        <p class="muted" style="font-size:13px;margin-bottom:10px">${st.auto
+          ? `O saldo já é calculado automaticamente (${esc(Rentab.label(st.rule))}). Se o banco mostrar um valor diferente, informe aqui: ele passa a ser o ponto de partida e o cálculo continua a partir de hoje.`
+          : 'Informe o saldo que aparece hoje no banco/corretora.'} Total aplicado: ${money(st.aplicado)}.</p>
         <div class="amount-input"><span>R$</span><input id="ib-v" inputmode="decimal" value="${fmtNum(st.saldo)}" autofocus></div>
         <div class="result"><div class="row"><span class="muted">Rendimento</span><b id="ib-r" class="num">—</b></div></div>`,
-      foot: `<button class="btn primary" data-ib>Salvar saldo</button>`,
+      foot: `${st.auto && inv.saldoAtual != null ? '<button class="btn" data-ibr>Voltar ao cálculo automático</button>' : ''}<button class="btn primary" data-ib>Salvar saldo</button>`,
       onMount: el => {
         const inp = $('#ib-v', el), upd = () => { const r = (parseMoney(inp.value) || 0) - st.aplicado; $('#ib-r', el).textContent = `${fmt(r)}${st.aplicado > 0 ? ' (' + pctFmt(r / st.aplicado) + ')' : ''}`; $('#ib-r', el).className = `num ${r >= 0 ? 'pos' : 'neg'}`; };
         upd(); inp.addEventListener('input', upd);
+        const reset = el.querySelector('[data-ibr]');
+        if (reset) reset.onclick = async () => {
+          await Store.update(`Investimentos/${inv._key}`, { saldoAtual: null, saldoEm: null });
+          toast('Saldo recalculado desde os aportes'); this.detail(inv._key);
+        };
         el.querySelector('[data-ib]').onclick = async () => {
           const v = parseMoney(inp.value); if (!(v >= 0)) return toast('Informe o saldo', 'err');
           await Store.update(`Investimentos/${inv._key}`, { saldoAtual: Math.round(v * 100) / 100, saldoEm: new Date().toISOString() });

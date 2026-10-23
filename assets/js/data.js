@@ -178,13 +178,36 @@ const Tx = {
 /* ── Investimentos ── */
 const INVEST_TYPES = ['CDB / LCI / LCA', 'Tesouro Direto', 'Poupança', 'Conta remunerada / Caixinha', 'Ações', 'Fundos imobiliários', 'Fundos', 'Previdência', 'Criptomoedas', 'Outro'];
 const Invest = {
-  /** aplicado = aportes − resgates; saldo = último saldo informado + movimentos posteriores */
+  /** aplicado = aportes − resgates.
+      saldo: com rentabilidade reconhecida (ex.: "110% do CDI"), cada movimento é corrigido
+      automaticamente até hoje pelas taxas oficiais (Rentab/Rates). Se o usuário informou o saldo
+      do banco, ele vira o ponto de partida e só o período seguinte é calculado.
+      Sem regra reconhecida (ações, FIIs...): último saldo informado + movimentos posteriores. */
   stats(inv) {
     const movs = Object.entries(inv.movs || {}).map(([k, m]) => ({ ...m, _key: k }))
       .sort((a, b) => (b.data || '').localeCompare(a.data || '') || (b.em || '').localeCompare(a.em || ''));
     const aplicado = sum(movs, m => m.valor);
-    const saldo = inv.saldoAtual != null ? Number(inv.saldoAtual) + sum(movs.filter(m => (m.em || '') > (inv.saldoEm || '')), m => m.valor) : aplicado;
-    return { movs, aplicado, saldo, rend: saldo - aplicado, pct: aplicado > 0 ? (saldo - aplicado) / aplicado : 0 };
+    const hoje = today(), rule = Rentab.rule(inv);
+    const anchor = inv.saldoAtual != null ? { valor: Number(inv.saldoAtual), data: (inv.saldoEm || '').slice(0, 10) || hoje } : null;
+    const after = anchor ? movs.filter(m => (m.em || '') > (inv.saldoEm || '')) : movs;
+    let saldo, auto = false;
+    if (rule) {
+      const chunks = (anchor ? [anchor] : []).concat(after.map(m => ({ valor: m.valor, data: [m.data || hoje, anchor?.data || ''].sort()[1] })));
+      const first = chunks.map(c => c.data).sort()[0];
+      if (first && first < hoje) Rates.need(first);
+      saldo = sum(chunks, c => c.valor * Rentab.factor(rule, c.data, hoje));
+      auto = true;
+    } else saldo = anchor ? anchor.valor + sum(after, m => m.valor) : aplicado;
+    saldo = Math.round(saldo * 100) / 100;
+    const rend = saldo - aplicado;
+    // IR estimado (tabela regressiva) pelo prazo médio ponderado dos aportes
+    let ir = 0;
+    if (auto && rend > 0 && Rentab.taxed(inv, rule)) {
+      const deps = movs.filter(m => m.valor > 0 && m.data), tot = sum(deps, m => m.valor);
+      const dias = tot ? sum(deps, m => m.valor * diffDays(m.data, hoje)) / tot : 0;
+      ir = Math.round(rend * Rentab.irRate(dias) * 100) / 100;
+    }
+    return { movs, aplicado, saldo, rend, pct: aplicado > 0 ? rend / aplicado : 0, auto, rule, ir, liquido: saldo - ir, anual: auto ? Rentab.annualNow(rule) : null };
   },
   mov(t, key) { return { data: t.date, valor: (t.type === 'income' ? -1 : 1) * Number(t.amount), origem: 'extrato', tx: key, em: new Date().toISOString() }; },
   /** Investimento cujo nome bate com a descrição do lançamento */
