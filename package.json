@@ -3,7 +3,7 @@
   "private": true,
   "description": "Fin (app financeiro) + Assistente Pessoal. O servidor do assistente (pasta api/) roda na Vercel.",
   "type": "module",
-  "engines": { "node": "20.x" },
+  "engines": { "node": "24.x" },
   "dependencies": {
     "mqtt": "^5.10.1"
   }
