@@ -133,9 +133,17 @@ async function executar(c) {
     if (c.acao === 'yt' && Player.ativo) return controlarAqui(c.valor);
     if (c.acao === 'youtube') {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
-      const r = await api({ acao: 'cmd', cmd: c });
+      let r;
+      try { r = await api({ acao: 'cmd', cmd: c }); }
+      catch (e) { if (e.status === 401) throw e; return await tocarAqui({ ...c, motivo: 'Não achei a TV pronta, então vou tocar aqui.' }); } // sem TV: toca no app
       if (c.musica !== false) dancarComTV();
       return falar(`Tocando ${r.video?.titulo || c.valor}${r.tela && S.telas.length > 1 ? ` na ${nomeTV(r.tela)}` : ' na TV'}.`, { mood: 'happy' });
+    }
+    // "abre o YouTube": na TV se der; senão abre aqui e pergunta o que tocar
+    if (c.acao === 'app' && c.valor === 'youtube' && !c.pedido) {
+      if (!S.tv) return abrirYouTubeAqui();
+      try { await api({ acao: 'cmd', cmd: c }); return falar('Abrindo o YouTube na TV.', { mood: 'happy' }); }
+      catch (e) { if (e.status === 401) throw e; return abrirYouTubeAqui('Não consegui abrir na TV.'); }
     }
     if (c.acao === 'tela') { const r = await api({ acao: 'cmd', cmd: c }); S.telaAtiva = r.nome; return falar(`Pronto, agora estou usando a ${nomeTV(r.nome)}.`, { mood: 'happy' }); }
     const r = await api({ acao: 'cmd', cmd: c });
@@ -170,11 +178,19 @@ async function procurarTVs() {
 
 /* ── YouTube dentro do app ── */
 async function tocarAqui(c) {
-  Voz.say(`Procurando ${c.valor}…`);
+  if (!c.motivo) Voz.say(`Procurando ${c.valor}…`);
   const { video } = await api({ acao: 'yt-busca', q: c.valor });
   const v = await Player.tocar(video);
   S.musicaLocal = c.musica !== false;
-  return falar(`Tocando ${v.titulo} aqui.${!S.youtube && !c.local ? ' Se quiser na TV, vincule o YouTube dela dizendo: conectar outra TV.' : ''}`, { mood: 'happy', listen: false });
+  const dica = !c.local && !LS.get('as_dica_cast') ? ' Para mandar para qualquer TV da sua rede, toque no ícone de transmitir no vídeo.' : '';
+  if (dica) LS.set('as_dica_cast', true);
+  return falar(`${c.motivo ? c.motivo + ' ' : ''}Tocando ${v.titulo}.${dica}`, { mood: 'happy', listen: false });
+}
+/** abre o YouTube no app e pergunta o que tocar (a próxima frase vira a busca) */
+let esperandoBusca = false;
+function abrirYouTubeAqui(motivo = '') {
+  esperandoBusca = true;
+  return falar(`${motivo ? motivo + ' ' : ''}Abro o YouTube aqui no app. O que você quer ver ou ouvir?`, { listen: true });
 }
 function controlarAqui(acao) {
   if (acao === 'pausar') { Player.pausar(); return falar('Pausado.', { listen: false }); }
@@ -198,7 +214,11 @@ async function pensar(texto) {
     for (const c of r.comandos || []) {
       try {
         if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
-        if (c.acao === 'youtube' && (c.local || !S.youtube)) { const { video } = await api({ acao: 'yt-busca', q: c.valor }); await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue; }
+        if (c.acao === 'youtube') {
+          let naTV = !c.local && S.youtube;
+          if (naTV) { try { await api({ acao: 'cmd', cmd: c }); if (r.musica || c.musica) dancarComTV(); continue; } catch (e) { if (e.status === 401) throw e; naTV = false; } }
+          const { video } = await api({ acao: 'yt-busca', q: c.valor }); await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue;
+        }
         if (c.acao === 'yt' && Player.ativo) { ({ pausar: Player.pausar, continuar: Player.continuar, proximo: Player.proximo }[c.valor] || (() => {}))(); continue; }
         const res = await api({ acao: 'cmd', cmd: c });
         if (c.acao === 'tela') S.telaAtiva = res.nome;
@@ -257,6 +277,14 @@ async function responder(texto, viaBotao = false) {
     if (/\b(repete|repetir|de novo|nao entendi|como assim|fala de novo)\b/.test(n)) return mostrarPasso();
     if (/\b(cancela|cancelar|sair da configuracao|para a configuracao|depois eu termino)\b/.test(n)) { encerrarPassos(); return falar('Tudo bem, paramos por aqui. Quando quiser continuar, diga: me ajuda a configurar.'); }
     return passo.on(texto, n);
+  }
+  if (esperandoBusca) {
+    esperandoBusca = false;
+    if (!NAO.test(n) && !/\b(nada|deixa|cancela|esquece)\b/.test(n)) {
+      const q = texto.replace(/^(toca|coloca|poe|põe|quero (ver|ouvir|assistir)|bota)\s+/i, '').trim();
+      return executar({ alvo: 'tv', acao: 'youtube', valor: q, local: true, musica: !/\b(video|receita|tutorial|aula|noticia|filme|desenho)\b/i.test(n) });
+    }
+    return falar('Tudo bem!');
   }
   if (pendente) { const p = pendente; pendente = null; if (SIM.test(n)) return iniciarPasso(p); if (NAO.test(n)) return falar('Tudo bem!'); }
   if (/\b(configur|me ajuda a (te )?configurar|conectar|instalar|primeiros passos|vincular|parear)\b/.test(n)) {
