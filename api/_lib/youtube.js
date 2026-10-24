@@ -130,3 +130,22 @@ export async function search(q) {
   if (!id) throw new Error(`Não encontrei "${q}" no YouTube.`);
   return { id, titulo: q, canal: '' };
 }
+
+/** diagnóstico: o que o YouTube responde sobre cada TV vinculada (sem dados sensíveis) */
+export async function diag() {
+  const c = await carregar(), out = { telas: c.telas.map(t => ({ nome: t.nome, samsung: !!t.samsung, ativa: t.screenId === c.ativa })) };
+  for (const t of c.telas) {
+    const r = { nome: t.nome };
+    try {
+      const tj = await (await post(`${BASE}/pairing/get_lounge_token_batch`, { screen_ids: t.screenId })).json().catch(() => null);
+      const token = tj?.screens?.[0]?.loungeToken; r.token = !!token;
+      if (token) {
+        const ar = await post(`${BASE}/pairing/get_screen_availability`, { lounge_token: token });
+        r.disponibilidade = { http: ar.status, corpo: (await ar.text()).replace(/"loungeToken":"[^"]*"/g, '"loungeToken":"…"').slice(0, 300) };
+      }
+    } catch (e) { r.erro = e.message; }
+    out[t.nome] = r;
+  }
+  try { const s = await session(); out.sessao = { tela: s.tela.nome, online: s.telaOnline }; } catch (e) { out.sessao = { erro: e.message }; }
+  return out;
+}

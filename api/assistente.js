@@ -8,6 +8,7 @@ import * as YT from './_lib/youtube.js';
 import * as IA from './_lib/ia.js';
 import { checkSenha, configured, hmac } from './_lib/store.js';
 
+const FB = (process.env.FIREBASE_DB_URL || 'https://sistema-financeiro-51295-default-rtdb.firebaseio.com').replace(/\/$/, '');
 const host = req => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
 const html = (res, status, title, msg) => res.status(status).setHeader('Content-Type', 'text/html; charset=utf-8')
   .send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
@@ -42,6 +43,14 @@ export default async function handler(req, res) {
     await fetch(`${(process.env.FIREBASE_DB_URL || 'https://sistema-financeiro-51295-default-rtdb.firebaseio.com').replace(/\/$/, '')}/assistente/diag-tv.json`, { method: 'PUT', body: JSON.stringify(r) }).catch(() => {});
     return res.json(r);
   }
+  // diagnóstico do YouTube (GET, com a senha): disponibilidade das TVs + o que o app registrou nas últimas tentativas
+  if (acao === 'diag-yt') {
+    if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
+    let r; try { r = { ok: true, ...(await YT.diag()) }; } catch (e) { r = { ok: false, erro: e.message }; }
+    r.appLog = await fetch(`${FB}/assistente/log-app.json`).then(x => x.json()).catch(() => null);
+    r.em = new Date().toISOString();
+    return res.json(r);
+  }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
@@ -57,6 +66,13 @@ export default async function handler(req, res) {
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'Use POST' });
   if (!checkSenha(req.headers['x-senha'] || b.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' }); }
+  // registro do app (o que aconteceu no aparelho), para diagnóstico — guarda só as últimas 40 linhas
+  if (acao === 'log') {
+    const atual = await fetch(`${FB}/assistente/log-app.json`).then(x => x.json()).catch(() => null) || [];
+    const novas = (Array.isArray(b.linhas) ? b.linhas : []).map(l => String(l).slice(0, 400));
+    await fetch(`${FB}/assistente/log-app.json`, { method: 'PUT', body: JSON.stringify([...atual, ...novas].slice(-40)) }).catch(() => {});
+    return res.json({ ok: true });
+  }
 
   try {
     switch (acao) {

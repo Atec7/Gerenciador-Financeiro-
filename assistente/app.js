@@ -31,6 +31,9 @@ async function api(body) {
   return data;
 }
 
+REG.enviar = () => { if (!S.senha || !REG.linhas.length) return; const linhas = REG.linhas.splice(0); api({ acao: 'log', linhas }).catch(() => {}); };
+REG.add('app aberto', VERSAO_APP, navigator.userAgent.slice(0, 120), location.href);
+
 /* ── Voz: falar (boca mexendo) e ouvir ── */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const Voz = {
@@ -146,6 +149,7 @@ function descreve(alvo, e) {
   return e.ligado ? `O ar está ligado em ${e.temperatura} graus${modo ? `, no modo ${modo}` : ''}${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.` : `O ar está desligado${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.`;
 }
 async function executar(c) {
+  REG.add('comando', c, 'youtube vinculado:', !!S.youtube, 'tv:', !!S.tv);
   if (!S.aqui) return falar(S.apiUrl ? 'Para comandar a TV e o ar, me abra pelo endereço do meu servidor.' : 'Ainda não tenho servidor. Quer que eu te ajude a me configurar? É só dizer: me ajuda a configurar.', { mood: 'sad' });
   if (!S.senha) return iniciarPasso('senha');
   Robot.mood('thinking');
@@ -156,8 +160,8 @@ async function executar(c) {
     if (c.acao === 'youtube') {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
       let r;
-      try { r = await api({ acao: 'cmd', cmd: c }); }
-      catch (e) { if (e.status === 401) throw e; return await tocarAqui({ ...c, video: e.video, motivo: 'Não achei a TV com o YouTube aberto, então vou tocar aqui.' }); } // sem TV: toca no app
+      try { r = await api({ acao: 'cmd', cmd: c }); REG.add('TV respondeu ok', r.tela, r.video?.titulo); }
+      catch (e) { REG.add('TV falhou -> app', e.status, e.message); if (e.status === 401) throw e; return await tocarAqui({ ...c, video: e.video, motivo: 'Não achei a TV com o YouTube aberto, então vou tocar aqui.' }); } // sem TV: toca no app
       if (c.musica !== false) dancarComTV();
       return falar(`Tocando ${r.video?.titulo || c.valor}${r.tela && S.telas.length > 1 ? ` na ${nomeTV(r.tela)}` : ' na TV'}.`, { mood: 'happy' });
     }
@@ -200,6 +204,7 @@ async function procurarTVs() {
 
 /* ── YouTube dentro do app ── */
 async function tocarAqui(c) {
+  REG.add('tocarAqui', c.valor, 'já tem vídeo:', !!c.video);
   if (!c.motivo) Voz.say(`Procurando ${c.valor}…`);
   const video = c.video || (await api({ acao: 'yt-busca', q: c.valor })).video;
   const v = await Player.tocar(video);
@@ -232,6 +237,7 @@ async function pensar(texto) {
   Robot.mood('thinking');
   try {
     const r = await api({ acao: 'conversa', texto, historico: S.hist });
+    REG.add('IA', texto, '->', r);
     S.hist.push({ quem: 'eu', texto }, { quem: 'robo', texto: r.fala }); S.hist = S.hist.slice(-12);
     const erros = [];
     for (const c of r.comandos || []) {
@@ -323,6 +329,7 @@ async function responder(texto, viaBotao = false) {
   if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
   if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return procurarTVs();
   const c = Comandos.parse(texto);
+  REG.add('ouvi', texto, '->', c || 'sem comando', 'IA:', !!S.ia);
   if (c?.erro) return falar(c.erro, { mood: 'sad' });
   if (c) return executar(c);
   // fora os comandos diretos: com a inteligência ligada, o Gemini responde (e pode mandar comandos)
@@ -714,3 +721,4 @@ const inicio = (async function iniciar() {
   $('#bubble').textContent = !LS.get('as_configurado') ? 'Oi! Eu sou o Robô. Toque em mim para eu te ajudar a me configurar.' : 'Oi! Toque em mim e fale.';
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+$('#versao-app') && ($('#versao-app').textContent = 'Versão do robô: ' + VERSAO_APP);

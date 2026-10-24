@@ -1,6 +1,11 @@
 /* Player do YouTube dentro do app (player oficial embutido, IFrame API).
    Player.tocar(video) · pausar() · continuar() · proximo() · fechar() · ativo / tocando
    Se um vídeo não puder ser embutido (erro 101/150), tenta a próxima opção da busca. */
+/* registro do que acontece (vai para o servidor, para diagnóstico) */
+const VERSAO_APP = 'v13';
+const REG = { linhas: [], envio: null, add(...x) { const l = `${new Date().toLocaleTimeString('pt-BR')} ${x.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(' ')}`; this.linhas.push(l); try { console.log('[reg]', l); } catch {} clearTimeout(this.envio); this.envio = setTimeout(() => this.enviar && this.enviar(), 1500); } };
+window.addEventListener('error', e => REG.add('ERRO JS', e.message, (e.filename || '').split('/').pop(), e.lineno));
+window.addEventListener('unhandledrejection', e => REG.add('ERRO promessa', String(e.reason?.message || e.reason)));
 const Player = (() => {
   const wrap = document.getElementById('player-wrap'), titulo = document.getElementById('pl-title');
   let yt = null, pronto = null, fila = [], atual = null, tocando = false, checagem = null;
@@ -21,7 +26,9 @@ const Player = (() => {
     fila = (video.opcoes && video.opcoes.length ? video.opcoes : [video]).slice();
     atual = fila.shift() || video;
     wrap.classList.remove('hidden'); titulo.textContent = atual.titulo || '';
+    REG.add('player.tocar', atual.id, atual.titulo, 'wrap visível:', !wrap.classList.contains('hidden'));
     await carregarAPI();
+    REG.add('API YT carregada:', !!window.YT?.Player);
     if (!window.YT?.Player) { simples(); return atual; } // sem a API: mostra o vídeo do jeito simples mesmo
     if (!yt) {
       // cria o iframe com permissão de tocar sozinho ("autoplay") e depois liga a API nele
@@ -30,11 +37,12 @@ const Player = (() => {
       f.src = `https://www.youtube.com/embed/${atual.id}?enablejsapi=1&autoplay=1&playsinline=1&rel=0&modestbranding=1&origin=${encodeURIComponent(location.origin)}`;
       box.replaceChildren(f);
       await new Promise(res => {
-        yt = new YT.Player('yt-frame', { events: { onReady: e => { try { e.target.unMute(); e.target.playVideo(); } catch {} res(); }, onStateChange: mudou, onError: erro } });
+        yt = new YT.Player('yt-frame', { events: { onReady: e => { REG.add('player pronto'); try { e.target.unMute(); e.target.playVideo(); } catch {} res(); }, onStateChange: mudou, onError: erro } });
         setTimeout(res, 6000);
       });
     } else { try { yt.unMute(); yt.loadVideoById(atual.id); } catch { yt = null; return tocar({ ...atual, opcoes: [atual, ...fila] }); } }
     conferirSom();
+    REG.add('iframe:', !!document.querySelector('#yt-player iframe'), 'altura player:', wrap.offsetHeight);
     return atual;
   }
   /* plano B: iframe direto, sem controle por voz (pausar/próximo pelo próprio vídeo) */
@@ -48,6 +56,7 @@ const Player = (() => {
     clearTimeout(checagem); somBtn.classList.add('hidden');
     checagem = setTimeout(() => {
       let st = -1, mudo = false; try { st = yt.getPlayerState(); mudo = yt.isMuted(); } catch {}
+      REG.add('conferir som: estado', st, 'mudo', mudo);
       if (st === 1 && !mudo) return;
       if (st !== 1) { try { yt.mute(); yt.playVideo(); } catch {} } // mudo, o navegador sempre deixa tocar
       somBtn.classList.remove('hidden'); cb.bloqueado();
@@ -57,12 +66,14 @@ const Player = (() => {
   function estadoAtual() { try { return yt.getPlayerState() === 1 && !yt.isMuted() ? 'tocando' : 'parado'; } catch { return 'parado'; } }
   function mudou(e) {
     const st = e.data; // 1 tocando, 2 pausado, 0 terminou
+    REG.add('player estado', st);
     let mudo = false; try { mudo = yt.isMuted(); } catch {}
     tocando = st === 1 && !mudo; // só conta como tocando se tiver som (é quando o robô dança)
     document.getElementById('pl-toggle').textContent = tocando ? '⏸' : '▶';
     if (st === 0 && fila.length) proximo(); else cb.estado(tocando ? 'tocando' : st === 0 ? 'fim' : 'parado');
   }
   function erro(e) {
+    REG.add('player erro', e.data);
     // 101/150: o dono não deixa tocar embutido → próxima opção da busca
     if ([100, 101, 150, 5, 2].includes(e.data) && fila.length) { atual = fila.shift(); titulo.textContent = atual.titulo || ''; yt.loadVideoById(atual.id); return; }
     cb.estado('erro');
