@@ -27,7 +27,7 @@ async function ping(base = '') {
 async function api(body) {
   const res = await fetch('/api/assistente', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-senha': S.senha }, body: JSON.stringify(body) });
   let data = {}; try { data = await res.json(); } catch {}
-  if (!res.ok || !data.ok) throw Object.assign(new Error(data.erro || `Erro ${res.status}`), { setup: data.setup, status: res.status });
+  if (!res.ok || !data.ok) throw Object.assign(new Error(data.erro || `Erro ${res.status}`), { setup: data.setup, status: res.status, video: data.video, semTela: data.semTela });
   return data;
 }
 
@@ -157,7 +157,7 @@ async function executar(c) {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
       let r;
       try { r = await api({ acao: 'cmd', cmd: c }); }
-      catch (e) { if (e.status === 401) throw e; return await tocarAqui({ ...c, motivo: 'Não achei a TV pronta, então vou tocar aqui.' }); } // sem TV: toca no app
+      catch (e) { if (e.status === 401) throw e; return await tocarAqui({ ...c, video: e.video, motivo: 'Não achei a TV com o YouTube aberto, então vou tocar aqui.' }); } // sem TV: toca no app
       if (c.musica !== false) dancarComTV();
       return falar(`Tocando ${r.video?.titulo || c.valor}${r.tela && S.telas.length > 1 ? ` na ${nomeTV(r.tela)}` : ' na TV'}.`, { mood: 'happy' });
     }
@@ -201,7 +201,7 @@ async function procurarTVs() {
 /* ── YouTube dentro do app ── */
 async function tocarAqui(c) {
   if (!c.motivo) Voz.say(`Procurando ${c.valor}…`);
-  const { video } = await api({ acao: 'yt-busca', q: c.valor });
+  const video = c.video || (await api({ acao: 'yt-busca', q: c.valor })).video;
   const v = await Player.tocar(video);
   S.musicaLocal = c.musica !== false;
   const dica = !c.local && !LS.get('as_dica_cast') ? ' Para mandar para qualquer TV da sua rede, toque no ícone de transmitir no vídeo.' : '';
@@ -239,8 +239,9 @@ async function pensar(texto) {
         if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
         if (c.acao === 'youtube') {
           let naTV = !c.local && S.youtube;
-          if (naTV) { try { await api({ acao: 'cmd', cmd: c }); if (r.musica || c.musica) dancarComTV(); continue; } catch (e) { if (e.status === 401) throw e; naTV = false; } }
-          const { video } = await api({ acao: 'yt-busca', q: c.valor }); await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue;
+          let video = null;
+          if (naTV) { try { await api({ acao: 'cmd', cmd: c }); if (r.musica || c.musica) dancarComTV(); continue; } catch (e) { if (e.status === 401) throw e; video = e.video; } }
+          video = video || (await api({ acao: 'yt-busca', q: c.valor })).video; await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue;
         }
         if (c.acao === 'yt' && Player.ativo) { ({ pausar: Player.pausar, continuar: Player.continuar, proximo: Player.proximo }[c.valor] || (() => {}))(); continue; }
         const res = await api({ acao: 'cmd', cmd: c });

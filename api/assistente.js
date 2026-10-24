@@ -98,9 +98,13 @@ export default async function handler(req, res) {
           // pesquisa, garante o app YouTube aberto na TV e manda tocar
           const [video, tela] = await Promise.all([YT.search(String(c.valor || '')), YT.telaDisponivel()]);
           if (!tela.online) {
-            // só a TV Samsung (SmartThings) dá para abrir o YouTube de longe; nas outras, a pessoa abre
-            if (tela.samsung && await ST.configured().catch(() => false)) { await ST.command({ acao: 'app', valor: 'youtube' }).catch(() => {}); await new Promise(r => setTimeout(r, 9000)); }
-            else if (tela.nome) { try { await YT.play(video.id); return res.json({ ok: true, video, tela: tela.nome }); } catch { throw new Error(`A ${tela.nome} não está com o YouTube aberto. Abra o YouTube nela e peça de novo.`); } }
+            // só a TV Samsung (SmartThings) dá para abrir o YouTube de longe: liga, abre e confere de novo
+            let ok = false;
+            if (tela.samsung && await ST.configured().catch(() => false)) {
+              await ST.command({ acao: 'app', valor: 'youtube' }).catch(() => {});
+              for (let i = 0; i < 6 && !ok; i++) { await new Promise(r => setTimeout(r, 2500)); ok = (await YT.telaDisponivel().catch(() => ({}))).online; }
+            }
+            if (!ok) return res.status(409).json({ erro: `A ${tela.nome || 'TV'} não está com o YouTube aberto.`, semTela: true, video });
           }
           await YT.play(video.id);
           return res.json({ ok: true, video, tela: tela.nome });

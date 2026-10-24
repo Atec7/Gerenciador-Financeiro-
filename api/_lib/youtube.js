@@ -59,6 +59,9 @@ async function session() {
   const tr = await post(`${BASE}/pairing/get_lounge_token_batch`, { screen_ids: cfg.screenId });
   const tj = await tr.json().catch(() => null), token = tj?.screens?.[0]?.loungeToken;
   if (!token) throw Object.assign(new Error('Perdi a ligação com o YouTube da TV. Vamos vincular de novo.'), { setup: 'youtube' });
+  // pergunta ao YouTube se a TV está mesmo com o app aberto agora (o canal aceita comandos mesmo com ela desligada)
+  let disponivel = false;
+  try { const ar = await post(`${BASE}/pairing/get_screen_availability`, { lounge_token: token }); const aj = await ar.json(); disponivel = aj?.screens?.[0]?.status === 'online'; } catch {}
 
   const cr = await post(`${BASE}/bc/bind?RID=1&VER=8&CVER=1&auth_failure_option=send_error`, {
     app: 'web', 'mdx-version': 3, name: NAME, id: cfg.deviceId, device: 'REMOTE_CONTROL', capabilities: 'que,dsdtr,atp,vsp',
@@ -82,7 +85,7 @@ async function session() {
     const r = await post(`${BASE}/bc/bind`, body, { name: NAME, loungeIdToken: token, SID: sid, AID: aid, gsessionid: gsession, device: 'REMOTE_CONTROL', app: 'youtube-desktop', VER: 8, v: 2, RID: ofs });
     if (!r.ok) throw new Error(`YouTube: o comando falhou (${r.status}).`);
   };
-  return { cmd, telaOnline, tela: cfg };
+  return { cmd, telaOnline: disponivel, tela: cfg };
 }
 /* respostas vêm em blocos: uma linha com o tamanho e, nas seguintes, um JSON (lido até fechar) */
 function parseChunks(text) {
@@ -98,7 +101,12 @@ function parseChunks(text) {
 /** está com o app YouTube aberto na TV? */
 export async function telaDisponivel() { try { const s = await session(); return { online: s.telaOnline, nome: s.tela.nome, samsung: !!s.tela.samsung }; } catch (e) { if (e.setup) throw e; return { online: false }; } }
 
-export async function play(videoId) { const s = await session(); await s.cmd('setPlaylist', { videoId, currentTime: 0, currentIndex: 0, videoIds: videoId }); return s.telaOnline; }
+/** manda tocar só se a TV estiver mesmo online; senão avisa (o app então toca no próprio app) */
+export async function play(videoId) {
+  const s = await session();
+  if (!s.telaOnline) throw Object.assign(new Error(`A ${s.tela.nome || 'TV'} não está com o YouTube aberto agora.`), { semTela: true });
+  await s.cmd('setPlaylist', { videoId, currentTime: 0, currentIndex: 0, videoIds: videoId }); return true;
+}
 const SIMPLES = { pausar: 'pause', continuar: 'play', proximo: 'next', anterior: 'previous' };
 export async function controle(acao) { if (!SIMPLES[acao]) throw new Error('Comando do YouTube desconhecido.'); const s = await session(); await s.cmd(SIMPLES[acao]); }
 

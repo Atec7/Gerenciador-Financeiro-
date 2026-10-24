@@ -22,7 +22,7 @@ const Player = (() => {
     atual = fila.shift() || video;
     wrap.classList.remove('hidden'); titulo.textContent = atual.titulo || '';
     await carregarAPI();
-    if (!window.YT?.Player) throw new Error('Não consegui carregar o player do YouTube.');
+    if (!window.YT?.Player) { simples(); return atual; } // sem a API: mostra o vídeo do jeito simples mesmo
     if (!yt) {
       // cria o iframe com permissão de tocar sozinho ("autoplay") e depois liga a API nele
       const box = document.getElementById('yt-player'), f = document.createElement('iframe');
@@ -33,9 +33,15 @@ const Player = (() => {
         yt = new YT.Player('yt-frame', { events: { onReady: e => { try { e.target.unMute(); e.target.playVideo(); } catch {} res(); }, onStateChange: mudou, onError: erro } });
         setTimeout(res, 6000);
       });
-    } else { try { yt.unMute(); } catch {} yt.loadVideoById(atual.id); }
+    } else { try { yt.unMute(); yt.loadVideoById(atual.id); } catch { yt = null; return tocar({ ...atual, opcoes: [atual, ...fila] }); } }
     conferirSom();
     return atual;
+  }
+  /* plano B: iframe direto, sem controle por voz (pausar/próximo pelo próprio vídeo) */
+  function simples() {
+    const f = document.createElement('iframe'); f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.setAttribute('allowfullscreen', '');
+    f.src = `https://www.youtube.com/embed/${atual.id}?autoplay=1&playsinline=1&rel=0`;
+    document.getElementById('yt-player').replaceChildren(f); yt = null; pronto = null;
   }
   /* o celular pode bloquear o som de um vídeo que começa sozinho: começa mudo e mostra "Toque para ouvir" */
   function conferirSom() {
