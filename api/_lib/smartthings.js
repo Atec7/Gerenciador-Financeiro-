@@ -27,6 +27,9 @@ export const redirectUri = host => `https://${host}/api/assistente?acao=st-callb
 
 /** cria o app OAuth na conta SmartThings do usuário usando um PAT (válido 24h; só é usado aqui) */
 export async function setup(pat, host, state) {
+  // já existe o app OAuth desta conta: só refaz a autorização (não precisa criar outro)
+  const old = await load('st');
+  if (old?.clientId && (!old.host || old.host === host)) { if (!old.host) await save('st', { ...old, host }); return authorizeUrl(old.clientId, host, state); }
   const suffix = Math.random().toString(36).slice(2, 8);
   const app = await st('/apps', {
     method: 'POST', token: pat, body: {
@@ -36,7 +39,7 @@ export async function setup(pat, host, state) {
     }
   });
   if (!app?.oauthClientId) throw new Error('A SmartThings não devolveu as credenciais do app. Confira se o token tem a permissão "Apps".');
-  await save('st', { clientId: app.oauthClientId, clientSecret: app.oauthClientSecret, appId: app.app?.appId });
+  await save('st', { clientId: app.oauthClientId, clientSecret: app.oauthClientSecret, appId: app.app?.appId, host });
   return authorizeUrl(app.oauthClientId, host, state);
 }
 export const authorizeUrl = (clientId, host, state = '') =>

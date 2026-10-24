@@ -26,7 +26,8 @@ export default async function handler(req, res) {
 
   // volta do login da Samsung (não tem a senha, mas traz um "state" assinado)
   // volta do login da Samsung: repassa o código ao robô, que conclui a conexão enviando a senha
-  if (acao === 'st-callback') {
+  // (a Samsung pode descartar o ?acao= do endereço de retorno e devolver só ?code=&state=)
+  if (acao === 'st-callback' || (req.method === 'GET' && !acao && (q.code || q.error))) {
     if (q.error) return html(res, 400, 'TV não conectada', `A Samsung respondeu: ${String(q.error_description || q.error)}`);
     return res.status(302).setHeader('Location', `/assistente/?st_code=${encodeURIComponent(String(q.code || ''))}&st_state=${encodeURIComponent(String(q.state || ''))}`).end();
   }
