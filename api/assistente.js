@@ -13,8 +13,15 @@ const html = (res, status, title, msg) => res.status(status).setHeader('Content-
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!senha()) return res.status(500).json({ ok: false, erro: 'Falta configurar a variável ASSISTENTE_SENHA na Vercel.' });
-  const q = req.query || {}, b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
+  const q = req.query || {};
+  // "ping": o robô (aberto no GitHub Pages durante a configuração) confere se o servidor existe — sem dados sensíveis
+  if (q.acao === 'ping' || req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    return res.json({ ok: true, assistente: true, senhaConfigurada: !!senha() });
+  }
+  if (!senha()) return res.status(500).json({ ok: false, erro: 'Falta configurar a variável ASSISTENTE_SENHA na Vercel.', setup: 'senha-vercel' });
+  const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
   const acao = q.acao || b.acao;
 
   // volta do login da Samsung (não tem a senha, mas traz um "state" assinado)

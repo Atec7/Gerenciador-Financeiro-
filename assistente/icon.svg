@@ -1,7 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs><radialGradient id="g" cx="30%" cy="25%" r="85%"><stop offset="0" stop-color="#22d3ee"/><stop offset=".75" stop-color="#4f46e5"/></radialGradient></defs>
+  <defs>
+    <linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#eef3fb"/><stop offset="1" stop-color="#b9c6db"/></linearGradient>
+    <radialGradient id="b" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#22d3ee"/><stop offset="1" stop-color="#4f46e5"/></radialGradient>
+  </defs>
   <rect width="512" height="512" rx="112" fill="#0b1020"/>
-  <circle cx="256" cy="256" r="176" fill="url(#g)"/>
-  <rect x="216" y="140" width="80" height="152" rx="40" fill="#fff"/>
-  <path d="M172 250v12a84 84 0 0 0 168 0v-12M256 346v34M214 380h84" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round"/>
+  <rect x="250" y="70" width="12" height="60" rx="6" fill="#b9c6db"/>
+  <circle cx="256" cy="72" r="22" fill="url(#b)"/>
+  <rect x="72" y="130" width="368" height="300" rx="96" fill="url(#m)"/>
+  <rect x="112" y="172" width="288" height="210" rx="70" fill="#0d1426"/>
+  <rect x="166" y="218" width="58" height="72" rx="24" fill="#5ef0ff"/>
+  <rect x="288" y="218" width="58" height="72" rx="24" fill="#5ef0ff"/>
+  <circle cx="184" cy="236" r="10" fill="#fff"/><circle cx="306" cy="236" r="10" fill="#fff"/>
+  <path d="M206 322h100a0 0 0 0 1 0 0c0 22-22 36-50 36s-50-14-50-36Z" fill="#5ef0ff"/>
 </svg>

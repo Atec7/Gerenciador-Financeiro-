@@ -3,43 +3,64 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Assistente</title>
-  <meta name="description" content="Assistente pessoal de voz: controla a TV e o ar-condicionado.">
+  <title>Assistente Robô</title>
+  <meta name="description" content="Robô assistente de voz: conversa com você e controla a TV e o ar-condicionado.">
   <meta name="theme-color" content="#0b1020">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Assistente">
+  <meta name="apple-mobile-web-app-title" content="Robô">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
-    <div><h1>Assistente</h1><p id="hello">Olá! Toque no microfone e fale.</p></div>
-    <button class="icon-btn" id="btn-cfg" aria-label="Configurações">
-      <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-    </button>
+    <div class="devices">
+      <span class="dev" id="dev-tv"><i></i>TV</span>
+      <span class="dev" id="dev-ar"><i></i>Ar</span>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-conv" aria-label="Modo conversa" title="Modo conversa (falar sem tocar)">
+        <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-cfg" aria-label="Configurações">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      </button>
+    </div>
   </header>
 
   <main>
-    <section class="devices">
-      <div class="dev" id="dev-tv"><span class="dot"></span><b>TV</b><small>não conectada</small></div>
-      <div class="dev" id="dev-ar"><span class="dot"></span><b>Ar-condicionado</b><small>não conectado</small></div>
-    </section>
+    <!-- o robô: toque nele para falar -->
+    <button id="robot" class="robot idle" aria-label="Falar com o robô">
+      <span class="antenna"><span class="bulb"></span></span>
+      <span class="head">
+        <span class="ear l"></span><span class="ear r"></span>
+        <span class="visor">
+          <span class="eye l"><span class="shine"></span></span>
+          <span class="eye r"><span class="shine"></span></span>
+          <span class="cheek l"></span><span class="cheek r"></span>
+          <span class="mouth"><span class="teeth"></span></span>
+        </span>
+      </span>
+      <span class="neck"></span>
+    </button>
 
-    <section class="mic-wrap">
-      <button id="mic" class="mic" aria-label="Falar">
-        <span class="ring"></span>
-        <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4M8 22h8"/></svg>
-      </button>
-      <p id="heard" class="heard">“Liga a TV” · “Ar em 22 graus” · “Volume 15”</p>
-      <form id="type-form" class="type-form"><input id="type" placeholder="ou escreva um comando…" autocomplete="off" enterkeyhint="send"><button aria-label="Enviar">➤</button></form>
-    </section>
+    <div class="bubble" id="bubble" aria-live="polite">Oi! Toque em mim para começarmos.</div>
+    <p class="heard" id="heard"></p>
 
-    <section class="quick">
-      <h2>Atalhos</h2>
+    <!-- respostas rápidas e campos do passo atual -->
+    <div class="choices" id="choices"></div>
+    <form class="field-area hidden" id="field-area"></form>
+
+    <div class="talk-row">
+      <form id="type-form" class="type-form"><input id="type" placeholder="Fale com o robô ou escreva aqui…" autocomplete="off" enterkeyhint="send"><button aria-label="Enviar">➤</button></form>
+      <button id="mic" class="mic" aria-label="Falar"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg></button>
+    </div>
+
+    <details class="panel" id="quick-panel">
+      <summary>Atalhos</summary>
       <div class="grid">
         <button data-q="liga a tv">📺 Ligar TV</button>
         <button data-q="desliga a tv">⏻ Desligar TV</button>
@@ -50,51 +71,31 @@
         <button data-q="ar em 22 graus">🌡️ Ar 22°</button>
         <button data-q="como está o ar">ℹ️ Estado do ar</button>
       </div>
-    </section>
-
-    <section class="log-wrap">
-      <h2>Conversa</h2>
+    </details>
+    <details class="panel">
+      <summary>Conversa</summary>
       <ol id="log" class="log"></ol>
-    </section>
+    </details>
   </main>
 
   <dialog id="cfg" class="sheet">
     <div class="sheet-head"><h3>Configurações</h3><button class="icon-btn" data-close aria-label="Fechar">✕</button></div>
     <div class="sheet-body">
-      <div class="step">
-        <h4>1. Senha do assistente</h4>
-        <p class="hint">A mesma que você colocou na Vercel (ASSISTENTE_SENHA).</p>
-        <div class="row"><input id="senha" type="password" placeholder="Senha" autocomplete="current-password"><button class="btn" id="save-senha">Salvar</button></div>
-        <p class="status" id="st-senha"></p>
-      </div>
-      <div class="step">
-        <h4>2. TV Samsung (SmartThings)</h4>
-        <ol class="hint">
-          <li>Abra <a href="https://account.smartthings.com/tokens" target="_blank" rel="noopener">account.smartthings.com/tokens</a> e entre com a conta Samsung.</li>
-          <li>Toque em <b>Gerar novo token</b>, dê o nome “assistente” e marque <b>todas</b> as permissões de <b>Dispositivos</b>, <b>Locais</b> e <b>Aplicativos</b>.</li>
-          <li>Copie o token e cole aqui. Ele só é usado uma vez.</li>
-        </ol>
-        <div class="row"><input id="pat" placeholder="Cole o token da SmartThings" autocomplete="off" spellcheck="false"><button class="btn" id="con-tv">Conectar</button></div>
-        <p class="status" id="st-tv"></p>
-      </div>
-      <div class="step">
-        <h4>3. Ar-condicionado Gree (Gree+)</h4>
-        <p class="hint">Use o mesmo e-mail e senha do app Gree+. O ar precisa já estar conectado ao Wi-Fi pelo Gree+.</p>
-        <input id="g-email" type="email" placeholder="E-mail do Gree+" autocomplete="username">
-        <input id="g-pass" type="password" placeholder="Senha do Gree+" autocomplete="off">
-        <label class="hint">Região da conta (a mesma escolhida no Gree+)
-          <select id="g-reg"><option value="South American">América do Sul (Brasil)</option><option value="Latin American">América Latina</option><option value="North American">América do Norte</option><option value="Europe">Europa</option></select></label>
-        <button class="btn wide" id="con-ar">Conectar ar</button>
-        <p class="status" id="st-ar"></p>
-      </div>
-      <div class="step">
-        <h4>Voz</h4>
-        <label class="switch"><input type="checkbox" id="speak" checked><span>Responder falando</span></label>
-      </div>
+      <p class="hint">O jeito mais fácil é pedir ao robô: diga <b>“me ajuda a configurar”</b>.</p>
+      <button class="btn wide" id="cfg-guide">Configurar com o robô</button>
+      <div class="step"><h4>Senha do assistente</h4>
+        <div class="row"><input id="senha" type="password" placeholder="Senha (ASSISTENTE_SENHA)" autocomplete="current-password"><button class="btn" id="save-senha">Salvar</button></div>
+        <p class="status" id="st-senha"></p></div>
+      <div class="step"><h4>Voz</h4>
+        <label class="switch"><input type="checkbox" id="speak" checked><span>O robô responde falando</span></label>
+        <label class="switch"><input type="checkbox" id="autolisten"><span>Modo conversa: depois de falar, ele já escuta você</span></label></div>
+      <div class="step"><h4>Recomeçar</h4>
+        <button class="btn ghost wide" id="cfg-reset">Apagar configurações deste aparelho</button></div>
     </div>
   </dialog>
 
   <script src="parser.js"></script>
+  <script src="robot.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

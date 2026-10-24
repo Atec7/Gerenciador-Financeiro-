@@ -1,6 +1,6 @@
 {
-  "name": "Assistente Pessoal",
-  "short_name": "Assistente",
+  "name": "Robô Assistente",
+  "short_name": "Robô",
   "description": "Controle a TV e o ar-condicionado pela voz.",
   "start_url": "./",
   "scope": "./",
