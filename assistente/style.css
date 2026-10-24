@@ -149,3 +149,7 @@ body.locked .panel, body.locked .talk-row, body.locked .devices, body.locked #bt
 .player-bar span{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .player-bar button{width:38px;height:38px;border-radius:10px;background:var(--bg);border:1px solid var(--border);font-size:15px}
 body.locked .player-wrap{display:none!important}
+
+.player-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.pl-som{position:absolute;inset:0;margin:auto;width:fit-content;height:fit-content;padding:14px 22px;border-radius:999px;background:var(--accent);color:#fff;font-weight:700;font-size:17px;box-shadow:0 10px 30px rgba(0,0,0,.45);animation:pulse-btn 1.4s ease-in-out infinite;z-index:2}
+@keyframes pulse-btn{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}

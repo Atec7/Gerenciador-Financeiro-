@@ -220,6 +220,7 @@ function controlarAqui(acao) {
   if (acao === 'proximo') { return Player.proximo() ? falar('Próximo.', { listen: false }) : falar('Não tenho próximo dessa busca. Peça outra música.'); }
   if (acao === 'anterior') { return falar('Esse player não volta. Peça a música de novo pelo nome.'); }
 }
+Player.on('bloqueado', () => { Robot.dance(false); Voz.say('O celular bloqueou o som. Toque no botão Toque para ouvir, no vídeo.'); });
 Player.on('estado', st => {
   if (st === 'tocando' && S.musicaLocal) Robot.dance(true, 112);
   else if (!S.musicaTV && !Ouvido.musica) Robot.dance(false);

@@ -3,8 +3,9 @@
    Se um vídeo não puder ser embutido (erro 101/150), tenta a próxima opção da busca. */
 const Player = (() => {
   const wrap = document.getElementById('player-wrap'), titulo = document.getElementById('pl-title');
-  let yt = null, pronto = null, fila = [], atual = null, tocando = false;
-  const cb = { estado: () => {} };
+  let yt = null, pronto = null, fila = [], atual = null, tocando = false, checagem = null;
+  const cb = { estado: () => {}, bloqueado: () => {} };
+  const somBtn = document.getElementById('pl-som');
 
   function carregarAPI() {
     if (pronto) return pronto;
@@ -23,18 +24,35 @@ const Player = (() => {
     await carregarAPI();
     if (!window.YT?.Player) throw new Error('Não consegui carregar o player do YouTube.');
     if (!yt) {
+      // cria o iframe com permissão de tocar sozinho ("autoplay") e depois liga a API nele
+      const box = document.getElementById('yt-player'), f = document.createElement('iframe');
+      f.id = 'yt-frame'; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.setAttribute('allowfullscreen', '');
+      f.src = `https://www.youtube.com/embed/${atual.id}?enablejsapi=1&autoplay=1&playsinline=1&rel=0&modestbranding=1&origin=${encodeURIComponent(location.origin)}`;
+      box.replaceChildren(f);
       await new Promise(res => {
-        yt = new YT.Player('yt-player', {
-          videoId: atual.id, playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1 },
-          events: { onReady: e => { try { e.target.playVideo(); } catch {} res(); }, onStateChange: mudou, onError: erro }
-        });
+        yt = new YT.Player('yt-frame', { events: { onReady: e => { try { e.target.unMute(); e.target.playVideo(); } catch {} res(); }, onStateChange: mudou, onError: erro } });
+        setTimeout(res, 6000);
       });
-    } else yt.loadVideoById(atual.id);
+    } else { try { yt.unMute(); } catch {} yt.loadVideoById(atual.id); }
+    conferirSom();
     return atual;
   }
+  /* o celular pode bloquear o som de um vídeo que começa sozinho: começa mudo e mostra "Toque para ouvir" */
+  function conferirSom() {
+    clearTimeout(checagem); somBtn.classList.add('hidden');
+    checagem = setTimeout(() => {
+      let st = -1, mudo = false; try { st = yt.getPlayerState(); mudo = yt.isMuted(); } catch {}
+      if (st === 1 && !mudo) return;
+      if (st !== 1) { try { yt.mute(); yt.playVideo(); } catch {} } // mudo, o navegador sempre deixa tocar
+      somBtn.classList.remove('hidden'); cb.bloqueado();
+    }, 2500);
+  }
+  somBtn.onclick = () => { try { yt.unMute(); yt.setVolume(100); yt.playVideo(); } catch {} somBtn.classList.add('hidden'); setTimeout(() => cb.estado(estadoAtual()), 600); };
+  function estadoAtual() { try { return yt.getPlayerState() === 1 && !yt.isMuted() ? 'tocando' : 'parado'; } catch { return 'parado'; } }
   function mudou(e) {
     const st = e.data; // 1 tocando, 2 pausado, 0 terminou
-    tocando = st === 1;
+    let mudo = false; try { mudo = yt.isMuted(); } catch {}
+    tocando = st === 1 && !mudo; // só conta como tocando se tiver som (é quando o robô dança)
     document.getElementById('pl-toggle').textContent = tocando ? '⏸' : '▶';
     if (st === 0 && fila.length) proximo(); else cb.estado(tocando ? 'tocando' : st === 0 ? 'fim' : 'parado');
   }
@@ -44,11 +62,11 @@ const Player = (() => {
     cb.estado('erro');
   }
   function pausar() { try { yt?.pauseVideo(); } catch {} }
-  function continuar() { try { yt?.playVideo(); } catch {} }
-  function proximo() { if (!fila.length) return false; atual = fila.shift(); titulo.textContent = atual.titulo || ''; yt?.loadVideoById(atual.id); return true; }
-  function fechar() { try { yt?.stopVideo(); } catch {} tocando = false; wrap.classList.add('hidden'); cb.estado('fechado'); }
+  function continuar() { try { yt?.playVideo(); } catch {} conferirSom(); }
+  function proximo() { if (!fila.length) return false; atual = fila.shift(); titulo.textContent = atual.titulo || ''; yt?.loadVideoById(atual.id); conferirSom(); return true; }
+  function fechar() { clearTimeout(checagem); try { yt?.stopVideo(); } catch {} tocando = false; somBtn.classList.add('hidden'); wrap.classList.add('hidden'); cb.estado('fechado'); }
 
-  document.getElementById('pl-toggle').onclick = () => (tocando ? pausar() : continuar());
+  document.getElementById('pl-toggle').onclick = () => { let st = -1; try { st = yt.getPlayerState(); } catch {} if (st === 1) pausar(); else { try { yt.unMute(); } catch {} continuar(); } };
   document.getElementById('pl-next').onclick = () => proximo();
   document.getElementById('pl-close').onclick = () => fechar();
 
