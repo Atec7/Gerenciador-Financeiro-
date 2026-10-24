@@ -30,4 +30,5 @@ jobs:
         env:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
           FORCE: ${{ github.event_name != 'schedule' }}
+          CORS_PROBE: ${{ github.event_name == 'push' && '1' || '' }}
         run: node .github/scripts/brapi-sync.mjs ${{ github.event_name == 'push' && 'PETR4 VALE3' || inputs.tickers }}

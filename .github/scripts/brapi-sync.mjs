@@ -11,7 +11,11 @@
 
 const API = 'https://brapi.dev';
 const DB = (process.env.FIREBASE_DB_URL || 'https://sistema-financeiro-51295-default-rtdb.firebaseio.com').replace(/\/$/, '');
-const TOKEN = (process.env.BRAPI_TOKEN || '').trim();
+import { readFileSync } from 'node:fs';
+/* chave: segredo BRAPI_TOKEN, se existir; senão a mesma que está no app (assets/js/core.js) */
+const TOKEN = (process.env.BRAPI_TOKEN || (() => {
+  try { return readFileSync(new URL('../../assets/js/core.js', import.meta.url), 'utf8').match(/const BRAPI_TOKEN\s*=\s*["']([^"']+)["']/)?.[1] || ''; } catch { return ''; }
+})()).trim();
 const args = process.argv.slice(2);
 const FORCE = args.includes('--force') || process.env.FORCE === 'true';
 const DRY = args.includes('--dry');
@@ -122,6 +126,18 @@ async function collectTickers() {
   return [...set];
 }
 
+/** confere se o navegador pode chamar a API v2 direto (pré-requisição CORS com Authorization) */
+async function corsProbe() {
+  const r = { };
+  try {
+    const pre = await fetch(`${API}/api/v2/stocks/quote?symbols=PETR4`, { method: 'OPTIONS', headers: { Origin: 'https://atec7.github.io', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
+    r.preflight = pre.status; r.allowOrigin = pre.headers.get('access-control-allow-origin'); r.allowHeaders = pre.headers.get('access-control-allow-headers');
+    const q = await fetch(`${API}/api/v2/stocks/quote?symbols=PETR4&token=${encodeURIComponent(TOKEN)}`, { headers: { Origin: 'https://atec7.github.io' } });
+    r.queryToken = q.status; r.queryAllowOrigin = q.headers.get('access-control-allow-origin');
+  } catch (e) { r.error = e.message; }
+  return r;
+}
+
 /* ── principal ── */
 async function main() {
   const now = spNow(), pregao = !['Sat', 'Sun'].includes(now.wd) && now.h >= 9.9 && now.h <= 18.9;
@@ -147,6 +163,7 @@ async function main() {
   } catch (e) {
     status.ok = false; status.error = e.message; console.error('Erro:', e.message);
   }
+  if (process.env.CORS_PROBE) status.cors = await corsProbe();
   patch.status = status;
   if (DRY) { console.log('[dry] não gravou no Firebase'); return; }
   await fb('mercado', 'PATCH', patch);

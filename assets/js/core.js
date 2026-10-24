@@ -13,6 +13,9 @@ const FIREBASE_CONFIG = {
   databaseURL: "https://sistema-financeiro-51295-default-rtdb.firebaseio.com"
 };
 const IMGBB_KEY = "95bb16ee776d7e20f26857cec98bd372";
+/* chave da brapi.dev (cotações da B3) — colocada no código por decisão do dono do app.
+   Para trocar: gere outra em brapi.dev/dashboard e substitua aqui. */
+const BRAPI_TOKEN = "4w1EWRTF4Z9isjnxwBdTy3";
 
 /* ── DOM ── */
 const $  = (s, r = document) => r.querySelector(s);
