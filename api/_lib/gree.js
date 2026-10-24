@@ -228,13 +228,13 @@ export async function status() {
   });
 }
 /** Diagnóstico passo a passo (sem dados sensíveis): login, conexão MQTT, leitura do estado nas duas cifras */
-export async function diag({ testar = false } = {}) {
+export async function diag({ testar = false, servidor = 0 } = {}) {
   const out = { passos: [] }, P = x => out.passos.push(x);
   let cfg = await load('gree');
   if (!cfg?.uid) return { ...out, erro: 'ar não configurado (ou senha diferente da usada na configuração)' };
   out.regiao = cfg.regiao; out.cifraSalva = cfg.cipher || null;
   out.aparelhos = (cfg.devs || []).map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, macFim00: d.mac.endsWith('00'), chaveTam: d.key.length }));
-  try {
+  if (servidor === 0) try {
     const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
     cfg = { ...cfg, uid, token }; await save('gree', cfg); P('login: ok');
     const devs = await devices(base, uid, token);
@@ -243,13 +243,14 @@ export async function diag({ testar = false } = {}) {
   } catch (e) { P(`login: ERRO ${e.message}`); return out; }
   const dev = cfg.devs[0];
   const hosts = [REGIOES[cfg.regiao][1], ...new Set(Object.values(REGIOES).map(r => r[1]))].filter((h, i, a) => a.indexOf(h) === i);
-  for (const h of hosts.slice(0, 4)) {
+  out.servidores = hosts; out.testando = hosts[servidor] || hosts[0];
+  for (const h of [hosts[servidor] || hosts[0]]) {
     const log = [];
     try {
       const st = await mqttSession(cfg, dev, async api => {
         for (const cipher of [1, 2]) {
           await api.send({ t: 'status', cols: ['Pow', 'Mod', 'SetTem', 'TemSen'] }, cipher);
-          const d = await api.next(x => x.t === 'dat' && Array.isArray(x.cols), 6000);
+          const d = await api.next(x => x.t === 'dat' && Array.isArray(x.cols), 5000);
           if (d) return { cipher, estado: datToObj(d) };
         }
         return null;

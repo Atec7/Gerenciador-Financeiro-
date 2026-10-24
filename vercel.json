@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/assistente.js": { "maxDuration": 30 }
+    "api/assistente.js": { "maxDuration": 60 }
   },
   "redirects": [
     { "source": "/", "destination": "/assistente/", "permanent": false }

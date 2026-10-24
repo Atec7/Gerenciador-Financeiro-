@@ -34,7 +34,7 @@ export default async function handler(req, res) {
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
-    try { return res.json({ ok: true, ...(await Gree.diag({ testar: q.testar === '1' })) }); } catch (e) { return res.status(500).json({ ok: false, erro: e.message }); }
+    try { return res.json({ ok: true, ...(await Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0 })) }); } catch (e) { return res.status(500).json({ ok: false, erro: e.message }); }
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'Use POST' });
   if (!checkSenha(req.headers['x-senha'] || b.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' }); }
