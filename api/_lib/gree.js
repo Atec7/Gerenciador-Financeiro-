@@ -92,38 +92,84 @@ export async function setup(email, password, regiao) {
 
 const parentMac = mac => (mac.length > 12 && mac.endsWith('00') ? mac.slice(0, -2) : mac);
 
-/** abre o MQTT, publica e espera a resposta do aparelho (alguns não respondem a comandos) */
-function mqttRequest(cfg, dev, pack, { wait = 3000, needReply = false } = {}) {
+/* Cifra V2 (AES-128-GCM) — usada por aparelhos Gree mais novos; a V1 é AES-128-ECB */
+const GCM_NONCE = Buffer.from([0x54, 0x40, 0x78, 0x44, 0x49, 0x67, 0x5a, 0x51, 0x6c, 0x5e, 0x63, 0x13]), GCM_AAD = Buffer.from('qualcomm-test');
+export function gcmEncrypt(text, key) {
+  const c = crypto.createCipheriv('aes-128-gcm', Buffer.from(key, 'utf8'), GCM_NONCE); c.setAAD(GCM_AAD);
+  const enc = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+  return { pack: enc.toString('base64'), tag: c.getAuthTag().toString('base64') };
+}
+export function gcmDecrypt(b64, tag, key) {
+  const d = crypto.createDecipheriv('aes-128-gcm', Buffer.from(key, 'utf8'), GCM_NONCE); d.setAAD(GCM_AAD);
+  if (tag) d.setAuthTag(Buffer.from(tag, 'base64'));
+  let s = d.update(Buffer.from(b64, 'base64')).toString('utf8');
+  if (tag) d.final();
+  return JSON.parse(s.slice(0, s.lastIndexOf('}') + 1));
+}
+const decodePack = (m, key) => {
+  if (m.tag) return gcmDecrypt(m.pack, m.tag, key);
+  try { return ecbDecrypt(m.pack, key, true); } catch { return gcmDecrypt(m.pack, null, key); }
+};
+
+/** Uma sessão MQTT curta: conecta, publica um ou mais pedidos e espera as respostas.
+    Falha de verdade se não conseguir conectar (antes, um comando "sumia" sem aviso). */
+function mqttSession(cfg, dev, run, { host, log } = {}) {
   return new Promise((resolve, reject) => {
-    const host = REGIOES[cfg.regiao][1], parent = parentMac(dev.mac);
-    const client = mqtt.connect(`${MQTT_PROTO}://${process.env.GREE_MQTT_HOST || host}:${MQTT_PORT}`, {
+    const h = process.env.GREE_MQTT_HOST || host || cfg.mqttHost || REGIOES[cfg.regiao][1], parent = parentMac(dev.mac);
+    const t0 = Date.now(), L = (...a) => log?.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${a.join(' ')}`);
+    const client = mqtt.connect(`${MQTT_PROTO}://${h}:${MQTT_PORT}`, {
       username: String(cfg.uid), password: cfg.token, clientId: `app_${crypto.randomBytes(8).toString('hex')}`,
       protocolVersion: 4, clean: true, rejectUnauthorized: false, connectTimeout: 8000, reconnectPeriod: 0, keepalive: 30
     });
-    let done = false;
-    const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); client.end(true); err ? reject(err) : resolve(val); };
-    const timer = setTimeout(() => needReply ? finish(new Error('O ar não respondeu. Ele está ligado na tomada e no Wi-Fi?')) : finish(null, null), wait + 8000);
-    client.on('error', e => finish(Object.assign(new Error(/auth|Not authorized|bad user/i.test(e.message) ? 'auth' : `Gree MQTT: ${e.message}`), { auth: /auth|Not authorized|bad user/i.test(e.message) })));
+    let done = false, connected = false;
+    const waiters = [];
+    const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); try { client.end(true); } catch {} err ? reject(err) : resolve(val); };
+    const timer = setTimeout(() => finish(connected ? new Error('timeout') : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), 22000);
+    client.on('error', e => { L('erro', e.message); const auth = /auth|Not authorized|bad user|password/i.test(e.message); finish(Object.assign(new Error(auth ? 'auth' : `Nuvem da Gree: ${e.message}`), { auth, noConnect: !connected })); });
+    client.on('close', () => { if (!connected) L('conexão fechada antes de conectar'); });
+    client.on('message', (topic, payload) => {
+      let m; try { m = JSON.parse(payload.toString()); } catch { L('msg', topic, '(não é JSON)'); return; }
+      let d = null; if (m.pack) { try { d = decodePack(m, dev.key); } catch (e) { L('msg', topic, `t=${m.t}`, 'não decifrou', m.tag ? '(GCM)' : '(ECB)'); } }
+      L('msg', topic.replace(parent, 'MAC'), `t=${m.t}`, d ? `→ ${d.t}${d.cols ? ` [${d.cols.length} campos]` : ''}${d.r != null ? ` r=${d.r}` : ''}` : '');
+      waiters.splice(0).forEach(w => w({ topic, m, d }));
+    });
     client.on('connect', () => {
-      client.subscribe([`response/${parent}/#`, `status/${parent}/#`], { qos: 1 }, err => {
+      connected = true; L('conectado em', h);
+      client.subscribe([`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`], { qos: 1 }, async err => {
         if (err) return finish(err);
-        const msg = { cid: String(1e9 + Math.floor(Math.random() * 9e9)), i: 0, pack: ecbEncrypt(JSON.stringify(pack), dev.key), t: 'pack', tcid: dev.mac, uid: cfg.uid };
-        client.publish(`request/${parent}`, JSON.stringify(msg), { qos: 1 }, e2 => {
-          if (e2) return finish(e2);
-          if (!needReply) setTimeout(() => finish(null, null), wait);
-        });
+        const api = {
+          send(pack, cipher = cfg.cipher || 1) {
+            const enc = cipher === 2 ? gcmEncrypt(JSON.stringify(pack), dev.key) : { pack: ecbEncrypt(JSON.stringify(pack), dev.key) };
+            const msg = { cid: String(1e9 + Math.floor(Math.random() * 9e9)), i: 0, ...enc, t: 'pack', tcid: dev.mac, uid: cfg.uid };
+            L('enviando', pack.t, pack.opt ? JSON.stringify(pack.opt) + '=' + JSON.stringify(pack.p) : '', `cifra V${cipher}`);
+            return new Promise((ok, ko) => client.publish(`request/${parent}`, JSON.stringify(msg), { qos: 1 }, e => e ? ko(e) : ok()));
+          },
+          /** espera uma mensagem decifrada que satisfaça o filtro */
+          next(filter, ms) {
+            return new Promise(res => {
+              const to = setTimeout(() => res(null), ms);
+              const w = x => { if (x.d && filter(x.d)) { clearTimeout(to); res(x.d); } else waiters.push(w); };
+              waiters.push(w);
+            });
+          }
+        };
+        try { finish(null, await run(api)); } catch (e) { finish(e); }
       });
     });
-    client.on('message', (topic, payload) => {
-      try {
-        const m = JSON.parse(payload.toString());
-        if (!m.pack) return;
-        const d = ecbDecrypt(m.pack, dev.key, true);
-        if (d.t === 'dat' && Array.isArray(d.cols)) return finish(null, Object.fromEntries(d.cols.map((c, i) => [c, d.dat?.[i]])));
-        if (d.t === 'res' && !needReply) return finish(null, d);
-      } catch { /* mensagem de outro tipo */ }
-    });
   });
+}
+const datToObj = d => Object.fromEntries(d.cols.map((c, i) => [c, d.dat?.[i]]));
+
+/** lê o estado do aparelho; descobre sozinho a cifra (V1/V2) e guarda a que funcionou */
+async function readState(cfg, dev, log) {
+  return mqttSession(cfg, dev, async api => {
+    for (const cipher of cfg.cipher ? [cfg.cipher, 3 - cfg.cipher] : [1, 2]) {
+      await api.send({ t: 'status', cols: ['Pow', 'Mod', 'SetTem', 'TemSen', 'WdSpd'] }, cipher);
+      const d = await api.next(x => x.t === 'dat' && Array.isArray(x.cols), 6000);
+      if (d) { if (cfg.cipher !== cipher) { cfg.cipher = cipher; await save('gree', cfg); } return datToObj(d); }
+    }
+    return null;
+  }, { log });
 }
 
 async function withLogin(fn) {
@@ -159,13 +205,63 @@ export function packFor(c) {
 }
 
 export async function command(c) {
-  return withLogin(async (cfg, dev) => { await mqttRequest(cfg, dev, packFor(c)); return dev.nome; });
+  return withLogin(async (cfg, dev) => {
+    const r = await mqttSession(cfg, dev, async api => {
+      await api.send(packFor(c));
+      return api.next(x => x.t === 'res' || x.t === 'dat', 5000);
+    });
+    if (!r && !cfg.cipher) {
+      // nenhuma resposta e cifra ainda desconhecida: descobre a cifra lendo o estado e reenvia
+      const st = await readState(cfg, dev);
+      if (!st) throw new Error('O ar não respondeu pela nuvem da Gree. Ele liga pelo app Gree+?');
+      await mqttSession(cfg, dev, async api => { await api.send(packFor(c)); return api.next(x => x.t === 'res', 4000); });
+    }
+    return dev.nome;
+  });
 }
 export async function status() {
   return withLogin(async (cfg, dev) => {
-    const s = await mqttRequest(cfg, dev, { t: 'status', cols: ['Pow', 'Mod', 'SetTem', 'TemSen', 'WdSpd'] }, { needReply: true });
-    const modo = Object.keys(MODOS).find(k => MODOS[k] === s?.Mod);
-    return { nome: dev.nome, ligado: s?.Pow === 1, temperatura: s?.SetTem ?? null, ambiente: s?.TemSen != null ? s.TemSen - 40 : null, modo };
+    const s = await readState(cfg, dev);
+    if (!s) throw new Error('O ar não respondeu pela nuvem da Gree. Ele liga pelo app Gree+?');
+    const modo = Object.keys(MODOS).find(k => MODOS[k] === s.Mod);
+    return { nome: dev.nome, ligado: s.Pow === 1, temperatura: s.SetTem ?? null, ambiente: s.TemSen != null ? s.TemSen - 40 : null, modo };
   });
+}
+/** Diagnóstico passo a passo (sem dados sensíveis): login, conexão MQTT, leitura do estado nas duas cifras */
+export async function diag({ testar = false } = {}) {
+  const out = { passos: [] }, P = x => out.passos.push(x);
+  let cfg = await load('gree');
+  if (!cfg?.uid) return { ...out, erro: 'ar não configurado (ou senha diferente da usada na configuração)' };
+  out.regiao = cfg.regiao; out.cifraSalva = cfg.cipher || null;
+  out.aparelhos = (cfg.devs || []).map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, macFim00: d.mac.endsWith('00'), chaveTam: d.key.length }));
+  try {
+    const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
+    cfg = { ...cfg, uid, token }; await save('gree', cfg); P('login: ok');
+    const devs = await devices(base, uid, token);
+    out.aparelhosAgora = devs.map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, mudouMac: !cfg.devs.some(x => x.mac === d.mac) }));
+    if (devs.length) { cfg.devs = devs; await save('gree', cfg); }
+  } catch (e) { P(`login: ERRO ${e.message}`); return out; }
+  const dev = cfg.devs[0];
+  const hosts = [REGIOES[cfg.regiao][1], ...new Set(Object.values(REGIOES).map(r => r[1]))].filter((h, i, a) => a.indexOf(h) === i);
+  for (const h of hosts.slice(0, 4)) {
+    const log = [];
+    try {
+      const st = await mqttSession(cfg, dev, async api => {
+        for (const cipher of [1, 2]) {
+          await api.send({ t: 'status', cols: ['Pow', 'Mod', 'SetTem', 'TemSen'] }, cipher);
+          const d = await api.next(x => x.t === 'dat' && Array.isArray(x.cols), 6000);
+          if (d) return { cipher, estado: datToObj(d) };
+        }
+        return null;
+      }, { host: h, log });
+      P({ mqtt: h, resultado: st ? `RESPONDEU com cifra V${st.cipher}` : 'conectou, mas o ar não respondeu', estado: st?.estado || null, log });
+      if (st) {
+        cfg.cipher = st.cipher; cfg.mqttHost = h; await save('gree', cfg);
+        if (testar) { const lg = []; await mqttSession(cfg, dev, async api => { await api.send(packFor({ acao: 'ligar' }), st.cipher); return api.next(x => x.t === 'res', 5000); }, { host: h, log: lg }); P({ teste: 'ligar', log: lg }); }
+        break;
+      }
+    } catch (e) { P({ mqtt: h, resultado: `ERRO ${e.message}`, log }); }
+  }
+  return out;
 }
 export async function configured() { const c = await load('gree'); return !!c?.uid; }
