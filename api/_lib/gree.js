@@ -136,10 +136,14 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
     });
     client.on('connect', () => {
       connected = true; L('conectado em', h);
-      const extra = log ? [`response/${parent}`, `status/${parent}`, `+/${parent}/#`, `${parent}/#`] : [];
-      client.subscribe([`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`, ...extra], { qos: 1 }, async (err, granted) => {
-        if (err) return finish(err);
-        if (log) L('inscrições:', (granted || []).map(g => `${g.topic.replace(parent, 'MAC')}=${g.qos === 128 ? 'RECUSADA' : 'ok'}`).join(' '));
+      const topics = log ? [`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`, `response/${parent}`, `status/${parent}`, `request/${parent}`, `response/${dev.mac}/#`]
+                         : [`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`];
+      const sub = t => new Promise(r => client.subscribe(t, { qos: 1 }, (err, g) => r(err ? `ERRO(${err.message})` : g?.[0]?.qos === 128 ? 'RECUSADA' : 'ok')));
+      (async () => {
+        const res = [];
+        for (const t of topics) res.push(`${t.replace(parent, 'MAC')}=${await sub(t)}`);
+        if (log) L('inscrições:', res.join(' | '));
+        if (!client.connected) return finish(new Error('o servidor da Gree fechou a conexão nas inscrições'));
         const api = {
           send(pack, cipher = cfg.cipher || 1) {
             const enc = cipher === 2 ? gcmEncrypt(JSON.stringify(pack), dev.key) : { pack: ecbEncrypt(JSON.stringify(pack), dev.key) };
@@ -157,7 +161,7 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
           }
         };
         try { finish(null, await run(api)); } catch (e) { finish(e); }
-      });
+      })();
     });
   });
 }
