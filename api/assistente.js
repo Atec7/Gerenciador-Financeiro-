@@ -34,7 +34,10 @@ export default async function handler(req, res) {
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
-    try { return res.json({ ok: true, ...(await Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0 })) }); } catch (e) { return res.status(500).json({ ok: false, erro: e.message }); }
+    const t0 = Date.now();
+    const limite = new Promise(r => setTimeout(() => r({ erro: 'diagnóstico passou de 45 s' }), 45000));
+    try { return res.json({ ok: true, ms: 0, ...(await Promise.race([Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0 }), limite])), msTotal: Date.now() - t0 }); }
+    catch (e) { return res.json({ ok: false, erro: e.message, onde: String(e.stack || '').split('\n').slice(0, 3).join(' | '), msTotal: Date.now() - t0 }); }
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'Use POST' });
   if (!checkSenha(req.headers['x-senha'] || b.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' }); }
