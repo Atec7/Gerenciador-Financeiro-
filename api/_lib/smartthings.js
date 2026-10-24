@@ -116,6 +116,11 @@ export async function command(c) {
       await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands: commands.map(x => ({ ...x, arguments: [x.arguments[0]] })) } });
     }
   } catch (e) {
+    // TV em espera (desligada) só aceita "ligar": liga, espera acordar e repete o comando
+    if (c.acao !== 'ligar' && c.acao !== 'desligar' && (e.status === 409 || e.status === 422 || /invalid device state/i.test(e.message)) && !c._religou) {
+      const ligada = await ligarEEsperar(cfg).catch(() => false);
+      if (ligada) return command({ ...c, _religou: true });
+    }
     if (e.status === 409 || e.status === 422 || /invalid device state|offline/i.test(e.message)) {
       const h = await saude(cfg).catch(() => null);
       if (h === 'OFFLINE') throw new Error(c.acao === 'ligar'
@@ -128,6 +133,20 @@ export async function command(c) {
   return cfg.tv.nome;
 }
 
+async function ligadaAgora(cfg) {
+  const s = await st(`/v1/devices/${cfg.tv.id}/status`, { token: cfg.access });
+  return s?.components?.main?.switch?.switch?.value === 'on';
+}
+/** liga a TV pela rede e espera ela responder (até ~20 s) */
+async function ligarEEsperar(cfg) {
+  if (await ligadaAgora(cfg).catch(() => false)) return false; // já estava ligada: o erro era outro
+  await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands: [{ component: 'main', capability: 'switch', command: 'on' }] } });
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    if (await ligadaAgora(cfg).catch(() => false)) { await new Promise(r => setTimeout(r, 2500)); return true; } // tempo para o sistema da TV carregar
+  }
+  return false;
+}
 async function saude(cfg) { const h = await st(`/v1/devices/${cfg.tv.id}/health`, { token: cfg.access }); return h?.state || null; }
 
 /** diagnóstico (sem dados sensíveis): saúde, capacidades e estado da TV */
