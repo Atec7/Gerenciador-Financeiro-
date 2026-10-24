@@ -119,3 +119,5 @@ button{cursor:pointer;border:0;background:none}
 .remote button{border-radius:14px;background:var(--bg);border:1px solid var(--border);font-weight:700;font-size:16px}
 .remote .r-ok{background:var(--accent);color:#fff;border-color:var(--accent);border-radius:50%}
 .remote button:active{transform:scale(.95)}
+/* trava: sem senha, só o robô e o campo de senha */
+body.locked .panel, body.locked .talk-row, body.locked .devices, body.locked #btn-conv, body.locked #btn-cfg { display: none !important; }

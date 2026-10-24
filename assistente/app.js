@@ -1,5 +1,8 @@
 /* Robô assistente — conversa por voz, configuração guiada e comandos da TV e do ar.
    Peças: Robot (rosto, robot.js) · Comandos (entende comandos, parser.js) · Voz (fala/ouve) · Passos (roteiro de configuração) */
+/* endereço oficial do robô: aberto por outro endereço (ex.: GitHub Pages), vai para lá — assim a memória é uma só */
+const SERVIDOR = 'https://gerenciador-financeiro-snowy.vercel.app';
+if (/github\.io$/.test(location.hostname)) location.replace(`${SERVIDOR}/assistente/${location.search}`);
 const $ = s => document.querySelector(s);
 const LS = {
   get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -188,6 +191,21 @@ async function proximoPasso() {
 }
 
 const PASSOS = {
+  entrar: {
+    say: () => 'Oi! Eu sou o Robô. Para começar, digite a minha senha.',
+    field: { inputs: [{ id: 'senha', type: 'password', label: 'Senha do robô', autocomplete: 'current-password' }], submit: 'Entrar' },
+    on: async (t, n, v) => {
+      const s = (v?.senha || '').trim(); if (!s) return falar('Digite a senha no campo, por favor.');
+      Robot.mood('thinking');
+      try {
+        const st = await statusComSenha(s);
+        S.senha = s; LS.set('as_senha', s); destravar();
+        const pronto = st.tv || st.ar || st.youtube;
+        if (pronto) { LS.set('as_configurado', true); encerrarPassos(); return falar('Senha certa! Bem-vindo de volta. Já lembro de tudo que você configurou. Pode falar.', { mood: 'happy' }); }
+        await Voz.say('Senha certa!', { mood: 'happy' }); return proximoPasso();
+      } catch (e) { return falar(e.status === 401 ? 'Senha errada. Tente de novo.' : e.message, { mood: 'sad' }); }
+    }
+  },
   intro: {
     say: () => S.aqui ? 'Oi! Eu sou o Robô, seu assistente. Vou te ajudar a me configurar, passo a passo. Vamos começar?'
       : 'Oi! Eu sou o Robô, seu assistente. Vou te ajudar a me configurar. São quatro etapas: meu servidor, a senha, o ar e a TV. Leva uns 20 minutos. Vamos começar?',
@@ -428,16 +446,29 @@ async function mostrarPasso(prefixo = '') {
   if (S.conversa || (val(p.choices) || []).some(c => c.value === 'sim' || c.value === 'nao')) ouvir();
 }
 
+/* ── trava: sem senha certa, só aparece o robô pedindo a senha ── */
+async function statusComSenha(senha) {
+  const res = await fetch('/api/assistente', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-senha': senha }, body: JSON.stringify({ acao: 'status' }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || !d.ok) throw Object.assign(new Error(d.erro || `Erro ${res.status}`), { status: res.status });
+  S.tv = d.tv; S.ar = d.ar; S.youtube = d.youtube; atualizaAparelhos();
+  return d;
+}
+function travar() { document.body.classList.add('locked'); }
+function destravar() { document.body.classList.remove('locked'); }
+
 /* ── tela ── */
 function atualizaAparelhos() { $('#dev-tv').classList.toggle('on', !!S.tv); $('#dev-ar').classList.toggle('on', !!S.ar); }
 function syncConv() { LS.set('as_conversa', S.conversa); $('#btn-conv').classList.toggle('active', S.conversa); $('#autolisten').checked = S.conversa; }
 
 async function primeiroToque() {
   if (S.started) return false; S.started = true;
+  await inicio.catch(() => {}); // espera conferir a senha salva antes de decidir o que fazer
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} // libera a fala no iPhone (precisa de um toque)
+  if (document.body.classList.contains('locked')) { iniciarPasso('entrar'); return true; }
   const voltando = LS.get('as_passo'), prefixo = LS.get('as_prefixo'); LS.set('as_prefixo', null);
   const qs = new URLSearchParams(location.search);
-  if (voltando && PASSOS[voltando]) { iniciarPasso(voltando, prefixo || 'Continuando de onde paramos.'); return true; }
+  if (voltando && PASSOS[voltando] && voltando !== 'entrar') { iniciarPasso(voltando, prefixo || 'Continuando de onde paramos.'); return true; }
   if (qs.get('config') || !LS.get('as_configurado')) { iniciarPasso('intro'); return true; }
   falar('Oi! Pode falar.', { listen: true });
   return true;
@@ -470,11 +501,16 @@ document.addEventListener('visibilitychange', () => {
 if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
 
 /* ── início ── */
-(async function iniciar() {
+const inicio = (async function iniciar() {
   syncConv(); atualizaAparelhos();
   const p = await ping(); S.aqui = !!p; S.senhaVercel = p?.senhaConfigurada ?? null;
-  if (S.aqui && S.senha) api({ acao: 'status' }).then(s => { S.tv = s.tv; S.ar = s.ar; atualizaAparelhos(); }).catch(() => {});
   const qs = new URLSearchParams(location.search);
+  if (S.aqui && S.senhaVercel) {
+    let ok = false;
+    if (S.senha) { try { const st = await statusComSenha(S.senha); ok = true; if (st.tv || st.ar || st.youtube) { LS.set('as_configurado', true); if (['intro', 'senha', 'entrar', 'v1', 'v2', 'v3', 'v4', 'v5', 'v-env'].includes(LS.get('as_passo'))) LS.set('as_passo', null); } } catch (e) { if (e.status === 401) { S.senha = ''; LS.set('as_senha', null); } } }
+    if (!ok) { travar(); if (!qs.get('st_code')) { $('#bubble').textContent = 'Oi! Eu sou o Robô. Toque em mim e digite a minha senha para começar.'; return; } }
+    destravar();
+  } else destravar(); // sem servidor ou sem senha no servidor: libera a configuração guiada
   if (qs.get('st_code')) {
     // voltou do login da Samsung: conclui a conexão da TV enviando a senha
     history.replaceState(null, '', location.pathname);
