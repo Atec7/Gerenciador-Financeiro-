@@ -103,7 +103,7 @@ function papo(t) {
   if (/\b(oi|ola|e ai|eai|bom dia|boa tarde|boa noite|hey)\b/.test(n) && n.split(' ').length <= 4) return { text: `${/bom dia/.test(n) ? 'Bom dia' : /boa tarde/.test(n) ? 'Boa tarde' : /boa noite/.test(n) ? 'Boa noite' : 'Oi'}! Em que posso ajudar? Posso ligar a TV, o ar, ou te ajudar a me configurar.`, mood: 'happy' };
   if (/\b(obrigad|valeu|brigad)/.test(n)) return { text: 'De nada! Estou aqui para isso.', mood: 'happy' };
   if (/\b(quem e voce|qual (e )?seu nome|como (voce )?se chama|voce e quem)\b/.test(n)) return { text: 'Eu sou o Robô, seu assistente pessoal. Eu controlo a sua TV e o seu ar-condicionado, e converso com você.', mood: 'happy' };
-  if (/\b(o que voce (faz|sabe)|ajuda|comandos|o que posso (falar|pedir))\b/.test(n) && !/configur/.test(n)) return { text: 'Você pode me pedir: liga a TV, volume 15, abre a Netflix, liga o ar, ar em 22 graus, modo frio, ou perguntar como está o ar. Também posso te ajudar a me configurar.' };
+  if (/\b(o que voce (faz|sabe)|ajuda|comandos|o que posso (falar|pedir))\b/.test(n) && !/configur/.test(n)) return { text: 'Na TV: liga a TV, volume 15, abre a Netflix, toca Evidências no YouTube, quero ouvir Djavan, pausa, próxima, e também pra baixo, direita, ok e voltar para navegar. No ar: liga o ar, ar em 22 graus, modo frio. Também te ajudo a me configurar.' };
   if (/\b(que horas|horas sao)\b/.test(n)) { const d = new Date(); return { text: `Agora são ${d.getHours()} horas e ${d.getMinutes()} minutos.` }; }
   if (/\b(piada|me faz rir|conta algo engracado)\b/.test(n)) return { text: PIADAS[Math.floor(Math.random() * PIADAS.length)], mood: 'happy' };
   if (/\b(modo conversa|conversa comigo|fica ouvindo)\b/.test(n)) { S.conversa = true; syncConv(); return { text: 'Modo conversa ligado! Depois que eu falo, já fico ouvindo você. Para parar, diga tchau.', mood: 'happy' }; }
@@ -123,10 +123,12 @@ async function executar(c) {
   Robot.mood('thinking');
   try {
     if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); Robot.mood('idle'); return falar(descreve(c.alvo, estado)); }
+    if (c.acao === 'youtube') { Voz.say(`Procurando ${c.valor} no YouTube…`); const r = await api({ acao: 'cmd', cmd: c }); return falar(`Tocando ${r.video?.titulo || c.valor} na TV.`, { mood: 'happy' }); }
     await api({ acao: 'cmd', cmd: c }); return falar(Comandos.reply(c), { mood: 'happy' });
   } catch (e) {
     Robot.mood('idle');
     if (e.setup === 'tv') return falar(`${e.message} Quer que eu te ajude a conectar a TV agora?`, { mood: 'sad', listen: true }).then(() => { pendente = 'tv1'; });
+    if (e.setup === 'youtube') return falar(`${e.message} Para eu escolher vídeos e músicas, preciso vincular o YouTube da TV. Vamos fazer agora?`, { mood: 'sad', listen: true }).then(() => { pendente = 'yt1'; });
     if (e.setup === 'ar') return falar(`${e.message} Quer que eu te ajude a conectar o ar agora?`, { mood: 'sad', listen: true }).then(() => { pendente = 'ar1'; });
     if (e.status === 401) return iniciarPasso('senha', 'Essa senha não está mais valendo.');
     return falar(e.message, { mood: 'sad' });
@@ -147,7 +149,8 @@ async function responder(texto, viaBotao = false) {
     return passo.on(texto, n);
   }
   if (pendente) { const p = pendente; pendente = null; if (SIM.test(n)) return iniciarPasso(p); if (NAO.test(n)) return falar('Tudo bem!'); }
-  if (/\b(configur|me ajuda a (te )?configurar|conectar|instalar|primeiros passos)\b/.test(n)) {
+  if (/\b(configur|me ajuda a (te )?configurar|conectar|instalar|primeiros passos|vincular|parear)\b/.test(n)) {
+    if (/\b(youtube|you tube)\b/.test(n)) return iniciarPasso(S.aqui ? 'yt1' : 'intro');
     if (/\b(tv|televisao)\b/.test(n)) return iniciarPasso(S.aqui ? 'tv1' : 'intro');
     if (/\bar\b/.test(n)) return iniciarPasso(S.aqui ? 'ar1' : 'intro');
     return iniciarPasso('intro');
@@ -176,10 +179,11 @@ async function proximoPasso() {
   const p = await ping(); S.senhaVercel = p?.senhaConfigurada;
   if (!p?.senhaConfigurada) return iniciarPasso('v-env');
   if (!S.senha) return iniciarPasso('senha');
-  try { const s = await api({ acao: 'status' }); S.tv = s.tv; S.ar = s.ar; atualizaAparelhos(); }
+  try { const s = await api({ acao: 'status' }); S.tv = s.tv; S.ar = s.ar; S.youtube = s.youtube; atualizaAparelhos(); }
   catch (e) { if (e.status === 401) return iniciarPasso('senha', 'A senha salva aqui não bate com a da Vercel.'); }
   if (!S.ar && !LS.get('as_pula_ar')) return iniciarPasso('ar1');
   if (!S.tv && !LS.get('as_pula_tv')) return iniciarPasso('tv1');
+  if (S.tv && !S.youtube && !LS.get('as_pula_yt')) return iniciarPasso('yt1');
   return iniciarPasso('fim');
 }
 
@@ -352,6 +356,22 @@ const PASSOS = {
       if (SIM.test(n)) { await Voz.say('Uhul! A TV está comigo.', { mood: 'happy' }); return proximoPasso(); }
       await Voz.say('Hmm. Se a TV estava desligada, confira se a opção Ligar com celular está ativa e se ela liga pelo app SmartThings. Depois tente dizendo: liga a TV.', { mood: 'sad' });
       return proximoPasso();
+    }
+  },
+  yt1: {
+    say: 'Para eu escolher vídeos e músicas na TV, preciso me ligar ao YouTube dela. Na TV, abra o YouTube, vá em Configurações e depois em Vincular com código de TV. Vai aparecer um código de 12 números. Digite ele aqui.',
+    field: { inputs: [{ id: 'codigo', type: 'text', label: 'Código da TV (12 números)', placeholder: '000 000 000 000' }], submit: 'Vincular YouTube' },
+    choices: [{ label: 'Pular', value: 'pular' }, B.repete],
+    on: async (t, n, v) => {
+      if (/pula/.test(n)) { LS.set('as_pula_yt', true); return proximoPasso(); }
+      const codigo = (v?.codigo || t || '').replace(/\D/g, '');
+      if (codigo.length < 10) return falar('O código tem 12 números. Ele aparece no YouTube da TV, em Configurações, Vincular com código de TV.', { mood: 'sad' });
+      Robot.mood('thinking');
+      try {
+        const r = await api({ acao: 'yt-pair', codigo }); S.youtube = true;
+        await Voz.say(`Pronto! Estou ligado ao YouTube da ${r.nome || 'TV'}. Agora você pode dizer, por exemplo: toca Evidências, ou quero ouvir Djavan.`, { mood: 'happy' });
+        return proximoPasso();
+      } catch (e) { return falar(e.message, { mood: 'sad' }); }
     }
   },
   fim: {

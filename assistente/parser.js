@@ -23,11 +23,36 @@
     const desligar = has(/\b(desliga|desligar|desligue|apaga|apagar|desativa|desativar)\b/);
     const estado = has(/\b(como (esta|ta)|status|estado|ta ligad\w*|esta ligad\w*|qual a temperatura|que temperatura)\b/);
 
+    // ── TV: YouTube (pesquisar e tocar um vídeo/música) ──
+    const yt = /\b(youtube|you tube)\b/.test(t);
+    const verboTocar = t.match(/^(?:robo |ei |por favor )?(toca|tocar|toque|coloca|colocar|coloque|poe|por|bota|botar|passa|reproduz|reproduzir|quero (?:ver|ouvir|assistir)|busca|buscar|procura|procurar|pesquisa|pesquisar|abre o video|abre a musica|assistir|ouvir)\b\s*(.*)$/);
+    if (verboTocar && !/\b(volume|canal|mudo|graus|ar condicionado)\b/.test(t)) {
+      let q = verboTocar[2]
+        .replace(/\b(no|na|pelo|pela) (youtube|you tube|tv|televisao)\b/g, ' ').replace(/\b(youtube|you tube)\b/g, ' ')
+        .replace(/^(alguma coisa|algo|umas? musicas?|uns videos?|o melhor|as melhores|os melhores) (do|da|de|dos|das)\b/, ' ')
+        .replace(/^(o |a |um |uma |uns |umas )?(videos?|clipes?|musicas?|cancao|cancoes|som|playlist|show|serie|filme|novela|desenho)( de| do| da| dos| das)?\b/, ' ')
+        .replace(/^(musica|musicas|video|videos) (do|da|de|dos|das)\b/, ' ').replace(/\b(pra mim|para mim|ai|agora|por favor)\b/g, ' ').replace(/\s+/g, ' ').trim();
+      const plataforma = (t.match(/\b(?:na|no) (netflix|prime|globoplay|globo play|disney|spotify|max)\b/) || [])[1];
+      if (plataforma) return { alvo: 'tv', acao: 'app', valor: { 'globo play': 'globoplay' }[plataforma] || plataforma, pedido: q.replace(new RegExp(`\\b(na|no) ${plataforma}\\b`), '').trim() };
+      if (q && q.split(' ').length <= 12 && (yt || /^(toca|tocar|toque|quero ouvir|ouvir|reproduz)/.test(verboTocar[1]) || /\b(videos?|clipes?|musicas?)\b/.test(raw)))
+        return { alvo: 'tv', acao: 'youtube', valor: q };
+    }
+    // ── TV: tocar/pausar/próximo ──
+    if (/^(pausa|pausar|pause|pausa o video|pausa a musica|para o video|para a musica)$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'pausar' };
+    if (/^(continua|continuar|despausa|despausar|play|volta a tocar|retoma|solta o video|da play)$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'continuar' };
+    if (/\b(proximo video|proxima musica|proximo clipe|pula|pula a musica|pula o video|pula essa|pular|passa (a musica|o video|pra proxima))\b/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'proximo' };
+    if (/\b(video anterior|musica anterior|volta a musica|volta o video)\b/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'anterior' };
+    // ── TV: controle remoto por voz (frases curtas) ──
+    const vezesT = num(/\b(\d{1,2}) (?:vezes|vez)\b/) || 1, tt = t.replace(/\b\d{1,2} (vezes|vez)\b/, '').trim();
+    const TEC = [[/^(pra |para )?(cima|sobe|subir)$/, 'UP'], [/^(pra |para )?(baixo|desce|descer)$/, 'DOWN'], [/^(pra |para a |para |pra )?esquerda$/, 'LEFT'], [/^(pra |para a |para |pra )?direita$/, 'RIGHT'],
+      [/^(ok|okay|seleciona|selecionar|confirma|confirmar|entra|entrar|enter|aperta ok|clica)$/, 'OK'], [/^(voltar|volta|volta uma tela|retorna)$/, 'BACK'], [/^(home|inicio|tela inicial|menu inicial|vai pro inicio)$/, 'HOME'], [/^menu$/, 'MENU']];
+    for (const [re, k] of TEC) if (re.test(tt)) return { alvo: 'tv', acao: 'tecla', valor: k, vezes: vezesT };
+
     // ── TV ──
-    const app = (t.match(/\b(netflix|youtube|you tube|prime|amazon|globoplay|globo play|disney)\b/) || [])[1];
-    const isTv = tv || /\b(volume|canal|netflix|youtube|you tube|mudo|globoplay|hdmi)\b/.test(t);
+    const app = (t.match(/\b(netflix|youtube|you tube|prime|amazon|globoplay|globo play|disney|spotify|apple tv|max|hbo|pluto|deezer|twitch)\b/) || [])[1];
+    const isTv = tv || /\b(volume|canal|netflix|youtube|you tube|mudo|som|globoplay|hdmi|spotify|disney|prime)\b/.test(t);
     if (isTv && !ar) {
-      if (app) return { alvo: 'tv', acao: 'app', valor: { 'you tube': 'youtube', amazon: 'prime', 'globo play': 'globoplay' }[app] || app };
+      if (app) return { alvo: 'tv', acao: 'app', valor: { 'you tube': 'youtube', amazon: 'prime', 'globo play': 'globoplay', 'apple tv': 'appletv', hbo: 'max' }[app] || app };
       if (has(/\b(tira|tirar|sai|sair) do mudo\b|\bvolta o som\b|\bativa o som\b/)) return { alvo: 'tv', acao: 'som' };
       if (has(/\b(mudo|silencia|silenciar|sem som)\b/)) return { alvo: 'tv', acao: 'mudo' };
       const hdmi = num(/\bhdmi ?(\d)\b/); if (hdmi) return { alvo: 'tv', acao: 'entrada', valor: `HDMI${hdmi}` };
@@ -74,7 +99,12 @@
     const tvs = { ligar: 'Ligando a TV', desligar: 'Desligando a TV', 'volume+': 'Aumentando o volume', 'volume-': 'Abaixando o volume', mudo: 'TV no mudo', som: 'Som de volta', 'canal+': 'Próximo canal', 'canal-': 'Canal anterior' };
     const ars = { ligar: 'Ligando o ar', desligar: 'Desligando o ar' };
     const modos = { frio: 'frio', quente: 'quente', seco: 'desumidificar', ventilar: 'ventilar', auto: 'automático' };
-    if (c.alvo === 'tv') return tvs[c.acao] || (c.acao === 'volume' ? `Volume em ${c.valor}` : c.acao === 'canal' ? `Mudando para o canal ${c.valor}` : c.acao === 'app' ? `Abrindo ${c.valor[0].toUpperCase() + c.valor.slice(1)}` : c.acao === 'entrada' ? `Mudando para ${c.valor}` : 'Feito');
+    const NOMES = { netflix: 'Netflix', youtube: 'YouTube', prime: 'Prime Video', disney: 'Disney+', spotify: 'Spotify', globoplay: 'Globoplay', appletv: 'Apple TV', max: 'Max', pluto: 'Pluto TV', deezer: 'Deezer', twitch: 'Twitch' };
+    const YTR = { pausar: 'Pausado', continuar: 'Continuando', proximo: 'Próximo', anterior: 'Voltando' };
+    const TECR = { UP: 'Pra cima', DOWN: 'Pra baixo', LEFT: 'Esquerda', RIGHT: 'Direita', OK: 'Ok', BACK: 'Voltando', HOME: 'Tela inicial', MENU: 'Menu' };
+    if (c.alvo === 'tv' && c.acao === 'app' && c.pedido) return `Abrindo ${NOMES[c.valor] || c.valor}. Escolher ${c.pedido} direto a ${NOMES[c.valor] || c.valor} não deixa, mas eu navego com você: diga pra baixo, direita, ok ou voltar.`;
+    if (c.alvo === 'tv' && c.acao === 'youtube') return nome ? `Tocando ${nome} na TV` : `Procurando ${c.valor} no YouTube`;
+    if (c.alvo === 'tv') return tvs[c.acao] || (c.acao === 'volume' ? `Volume em ${c.valor}` : c.acao === 'canal' ? `Mudando para o canal ${c.valor}` : c.acao === 'app' ? `Abrindo ${NOMES[c.valor] || c.valor}` : c.acao === 'entrada' ? `Mudando para ${c.valor}` : c.acao === 'yt' ? YTR[c.valor] : c.acao === 'tecla' ? TECR[c.valor] : 'Feito');
     if (c.alvo === 'ar') return ars[c.acao] || (c.acao === 'temperatura' ? `Ar em ${c.valor} graus` : c.acao === 'modo' ? `Ar no modo ${modos[c.valor]}` : c.acao === 'ventilacao' ? `Ventilação ${c.valor}` : 'Feito');
     return 'Feito';
   }

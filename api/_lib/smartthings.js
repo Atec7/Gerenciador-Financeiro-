@@ -74,7 +74,12 @@ async function findTv(access) {
   return tv ? { id: tv.deviceId, nome: tv.label || tv.name } : null;
 }
 
-const APPS = { netflix: '3201907018807', youtube: '111299001912', prime: '3201910019365', globoplay: '3201908019041', disney: '3201901017640' };
+export const APPS = {
+  netflix: '3201907018807', youtube: '111299001912', prime: '3201910019365', disney: '3201901017640', spotify: '3201606009684',
+  globoplay: '3201908019041', appletv: '3201807016597', max: '3202301029760', pluto: '3201808016802', deezer: '3201608010191', twitch: '3202203026841'
+};
+/* teclas do controle remoto (capacidade samsungvd.remoteControl) */
+const TECLAS = { UP: 'UP', DOWN: 'DOWN', LEFT: 'LEFT', RIGHT: 'RIGHT', OK: 'OK', BACK: 'BACK', HOME: 'HOME', MENU: 'MENU' };
 
 /** traduz o comando do app para comandos SmartThings */
 export function commandsFor(c) {
@@ -92,6 +97,9 @@ export function commandsFor(c) {
     case 'canal-': return [k('tvChannel', 'channelDown')];
     case 'entrada': return [k('mediaInputSource', 'setInputSource', [String(c.valor).toUpperCase()])];
     case 'app': { const id = APPS[c.valor]; if (!id) throw new Error(`Não sei abrir "${c.valor}" na TV.`); return [k('custom.launchapp', 'launchApp', [id])]; }
+    case 'tecla': { const t = TECLAS[c.valor]; if (!t) throw new Error('Tecla desconhecida.'); return Array.from({ length: Math.min(c.vezes || 1, 10) }, () => k('samsungvd.remoteControl', 'send', [t, 'PRESS_AND_RELEASED'])); }
+    case 'play': return [k('mediaPlayback', 'play')];
+    case 'pause': return [k('mediaPlayback', 'pause')];
     default: throw new Error('Comando de TV desconhecido.');
   }
 }
@@ -101,7 +109,12 @@ export async function command(c) {
   if (!cfg.tv) { cfg.tv = await findTv(cfg.access); await save('st', cfg); }
   if (!cfg.tv) throw new Error('Não encontrei nenhuma TV na sua conta SmartThings. Adicione a TV no app SmartThings.');
   try {
-    await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands: commandsFor(c) } });
+    const commands = commandsFor(c);
+    try { await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands } }); }
+    catch (e1) {
+      if (c.acao !== 'tecla' || e1.status !== 422) throw e1;
+      await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands: commands.map(x => ({ ...x, arguments: [x.arguments[0]] })) } });
+    }
   } catch (e) {
     if (c.acao === 'ligar' && (e.status === 409 || e.status === 422 || /offline/i.test(e.message)))
       throw new Error('A TV está desconectada da internet. Ative "Ligar com o celular" nas configurações da TV.');

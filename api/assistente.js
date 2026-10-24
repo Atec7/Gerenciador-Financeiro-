@@ -4,6 +4,7 @@
    Toda chamada exige a senha do assistente (variável ASSISTENTE_SENHA na Vercel). */
 import * as ST from './_lib/smartthings.js';
 import * as Gree from './_lib/gree.js';
+import * as YT from './_lib/youtube.js';
 import { checkSenha, configured, hmac } from './_lib/store.js';
 
 const host = req => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
@@ -51,8 +52,8 @@ export default async function handler(req, res) {
   try {
     switch (acao) {
       case 'status': {
-        const [tv, ar] = await Promise.all([ST.configured().catch(() => false), Gree.configured().catch(() => false)]);
-        return res.json({ ok: true, tv, ar });
+        const [tv, ar, youtube] = await Promise.all([ST.configured().catch(() => false), Gree.configured().catch(() => false), YT.configured().catch(() => false)]);
+        return res.json({ ok: true, tv, ar, youtube });
       }
       case 'st-setup': {
         if (!b.pat) throw new Error('Cole o token da SmartThings.');
@@ -65,12 +66,25 @@ export default async function handler(req, res) {
         const tv = await ST.callback(String(b.code || ''), host(req));
         return res.json({ ok: true, tv });
       }
+      case 'yt-pair': return res.json({ ok: true, nome: await YT.pair(b.codigo) });
       case 'gree-setup': {
         if (!b.email || !b.password) throw new Error('Informe o e-mail e a senha do Gree+.');
         return res.json({ ok: true, ...(await Gree.setup(String(b.email).trim(), String(b.password), b.regiao || 'South American')) });
       }
       case 'cmd': {
         const c = b.cmd || {};
+        if (c.alvo === 'tv' && c.acao === 'youtube') {
+          // pesquisa, garante o app YouTube aberto na TV e manda tocar
+          const [video, aberto] = await Promise.all([YT.search(String(c.valor || '')), YT.telaDisponivel()]);
+          if (!aberto) { await ST.command({ acao: 'app', valor: 'youtube' }).catch(() => {}); await new Promise(r => setTimeout(r, 9000)); }
+          await YT.play(video.id);
+          return res.json({ ok: true, video });
+        }
+        if (c.alvo === 'tv' && c.acao === 'yt') {
+          try { await YT.controle(c.valor); }
+          catch (e) { if (!e.setup || !['pausar', 'continuar'].includes(c.valor)) throw e; await ST.command({ acao: c.valor === 'pausar' ? 'pause' : 'play' }); }
+          return res.json({ ok: true });
+        }
         if (c.alvo === 'tv') return res.json({ ok: true, nome: await ST.command(c) });
         if (c.alvo === 'ar') return res.json({ ok: true, nome: await Gree.command(c) });
         throw new Error('Aparelho desconhecido.');
