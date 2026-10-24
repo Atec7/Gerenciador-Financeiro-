@@ -57,7 +57,7 @@ Comandos possíveis (use só quando a pessoa pedir algo para fazer):
 - {"alvo":"tv","acao":"volume","valor":0-100} · {"alvo":"tv","acao":"volume+"|"volume-","vezes":1-10}
 - {"alvo":"tv","acao":"canal","valor":número}
 - {"alvo":"tv","acao":"app","valor":"netflix"|"youtube"|"prime"|"disney"|"spotify"|"globoplay"|"appletv"|"max"}
-- {"alvo":"tv","acao":"youtube","valor":"termo de busca"}  ← toca um vídeo/música no YouTube da TV. Escolha um bom termo de busca (ex.: "músicas animadas para dançar", "Djavan ao vivo", "desenho Peppa Pig").
+- {"alvo":"tv","acao":"youtube","valor":"termo de busca"}  ← toca um vídeo/música AQUI no app (padrão). Só se a pessoa pedir explicitamente "na TV", acrescente "naTV":true para tocar no YouTube da TV. Escolha um bom termo de busca (ex.: "músicas animadas para dançar", "Djavan ao vivo", "desenho Peppa Pig").
 - {"alvo":"tv","acao":"yt","valor":"pausar"|"continuar"|"proximo"|"anterior"}
 - {"alvo":"tv","acao":"tecla","valor":"UP"|"DOWN"|"LEFT"|"RIGHT"|"OK"|"BACK"|"HOME","vezes":1-10}
 - {"alvo":"tv","acao":"tela","valor":"nome da TV"}  ← troca a TV ativa do YouTube

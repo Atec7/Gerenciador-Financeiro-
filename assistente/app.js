@@ -155,7 +155,7 @@ async function executar(c) {
   Robot.mood('thinking');
   try {
     if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); Robot.mood('idle'); return falar(descreve(c.alvo, estado)); }
-    if (c.acao === 'youtube' && (c.local || !S.youtube)) return await tocarAqui(c);
+    if (c.acao === 'youtube' && (!c.naTV || !S.youtube)) return await tocarAqui(c.naTV && !S.youtube ? { ...c, motivo: 'Ainda não tenho o YouTube da TV vinculado, então vou tocar aqui.' } : c);
     if (c.acao === 'yt' && Player.ativo) return controlarAqui(c.valor);
     if (c.acao === 'youtube') {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
@@ -209,7 +209,7 @@ async function tocarAqui(c) {
   const video = c.video || (await api({ acao: 'yt-busca', q: c.valor })).video;
   const v = await Player.tocar(video);
   S.musicaLocal = c.musica !== false;
-  const dica = !c.local && !LS.get('as_dica_cast') ? ' Para mandar para qualquer TV da sua rede, toque no ícone de transmitir no vídeo.' : '';
+  const dica = !c.local && !LS.get('as_dica_cast') ? ' Se quiser na TV, é só dizer: toca, o nome da música, na TV.' : '';
   if (dica) LS.set('as_dica_cast', true);
   return falar(`${c.motivo ? c.motivo + ' ' : ''}Tocando ${v.titulo}.${dica}`, { mood: 'happy', listen: false });
 }
@@ -244,7 +244,7 @@ async function pensar(texto) {
       try {
         if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
         if (c.acao === 'youtube') {
-          let naTV = !c.local && S.youtube;
+          let naTV = !!c.naTV && S.youtube;
           let video = null;
           if (naTV) { try { await api({ acao: 'cmd', cmd: c }); if (r.musica || c.musica) dancarComTV(); continue; } catch (e) { if (e.status === 401) throw e; video = e.video; } }
           video = video || (await api({ acao: 'yt-busca', q: c.valor })).video; await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue;
