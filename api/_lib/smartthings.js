@@ -116,13 +116,33 @@ export async function command(c) {
       await st(`/v1/devices/${cfg.tv.id}/commands`, { method: 'POST', token: cfg.access, body: { commands: commands.map(x => ({ ...x, arguments: [x.arguments[0]] })) } });
     }
   } catch (e) {
-    if (c.acao === 'ligar' && (e.status === 409 || e.status === 422 || /offline/i.test(e.message)))
-      throw new Error('A TV está desconectada da internet. Ative "Ligar com o celular" nas configurações da TV.');
+    if (e.status === 409 || e.status === 422 || /invalid device state|offline/i.test(e.message)) {
+      const h = await saude(cfg).catch(() => null);
+      if (h === 'OFFLINE') throw new Error(c.acao === 'ligar'
+        ? 'A Samsung está vendo a TV desconectada, então não consigo ligar. Ligue pelo controle uma vez e ative, na TV, Configurações, Geral, Rede, Ligar com celular.'
+        : 'A TV está desligada ou sem internet para a Samsung. Ligue a TV e confira se ela está no Wi-Fi. Depois tente de novo.');
+      throw new Error(`A TV recusou esse comando agora (${c.acao}). Ela pode não ter esse recurso ou estar ocupada; tente de novo com a TV ligada.`);
+    }
     throw e;
   }
   return cfg.tv.nome;
 }
 
+async function saude(cfg) { const h = await st(`/v1/devices/${cfg.tv.id}/health`, { token: cfg.access }); return h?.state || null; }
+
+/** diagnóstico (sem dados sensíveis): saúde, capacidades e estado da TV */
+export async function diag() {
+  const cfg = await token(); const out = { tv: cfg.tv?.nome || null };
+  if (!cfg.tv) { out.tvs = (await st('/v1/devices', { token: cfg.access })).items?.map(d => ({ nome: d.label || d.name, tipo: d.ocf?.ocfDeviceType || d.deviceTypeName })); return out; }
+  out.saude = await saude(cfg).catch(e => `erro: ${e.message}`);
+  const d = await st(`/v1/devices/${cfg.tv.id}`, { token: cfg.access }).catch(e => ({ erro: e.message }));
+  out.modelo = d.ocf?.modelNumber || d.deviceTypeName || null; out.tipo = d.ocf?.ocfDeviceType || null;
+  out.capacidades = (d.components || []).find(c => c.id === 'main')?.capabilities?.map(c => c.id) || [];
+  const s = await st(`/v1/devices/${cfg.tv.id}/status`, { token: cfg.access }).catch(e => ({ erro: e.message }));
+  const m = s?.components?.main || {};
+  out.estado = { switch: m.switch?.switch?.value ?? null, volume: m.audioVolume?.volume?.value ?? null, entrada: m.mediaInputSource?.inputSource?.value ?? m['samsungvd.mediaInputSource']?.inputSource?.value ?? null };
+  return out;
+}
 export async function status() {
   const cfg = await token();
   if (!cfg.tv) return null;

@@ -34,6 +34,14 @@ export default async function handler(req, res) {
     return res.status(302).setHeader('Location', `/assistente/?st_code=${encodeURIComponent(String(q.code || ''))}&st_state=${encodeURIComponent(String(q.state || ''))}`).end();
   }
 
+  // diagnóstico da TV (GET, com a senha): saúde e capacidades na SmartThings; resultado também em /assistente/diag-tv
+  if (acao === 'diag-tv') {
+    if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
+    let r; try { r = { ok: true, ...(await ST.diag()) }; } catch (e) { r = { ok: false, erro: e.message }; }
+    r.em = new Date().toISOString();
+    await fetch(`${(process.env.FIREBASE_DB_URL || 'https://sistema-financeiro-51295-default-rtdb.firebaseio.com').replace(/\/$/, '')}/assistente/diag-tv.json`, { method: 'PUT', body: JSON.stringify(r) }).catch(() => {});
+    return res.json(r);
+  }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
