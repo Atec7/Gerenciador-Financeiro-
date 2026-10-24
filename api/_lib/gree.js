@@ -131,7 +131,8 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
     client.on('message', (topic, payload) => {
       let m; try { m = JSON.parse(payload.toString()); } catch { L('msg', topic, '(não é JSON)'); return; }
       let d = null; if (m.pack) { try { d = decodePack(m, dev.key); } catch (e) { L('msg', topic, `t=${m.t}`, 'não decifrou', m.tag ? '(GCM)' : '(ECB)'); } }
-      L('msg', topic.replace(parent, 'MAC'), `t=${m.t}`, d ? `→ ${d.t}${d.cols ? ` [${d.cols.length} campos]` : ''}${d.r != null ? ` r=${d.r}` : ''}` : '');
+      L('msg', topic.replace(parent, 'MAC'), `t=${m.t}`, d ? `→ ${d.t}${d.cols ? ` [${d.cols.length} campos]` : ''}${d.opt ? ` ${JSON.stringify(d.opt)}=${JSON.stringify(d.p)}` : ''}${d.r != null ? ` r=${d.r}` : ''}` : '',
+        `campos:${Object.keys(m).filter(k => k !== 'pack').join(',')}`, m.tag ? 'GCM' : '', m.uid && m.uid !== cfg.uid ? 'de outro uid' : '');
       waiters.splice(0).forEach(w => w({ topic, m, d }));
     });
     client.on('connect', () => {
@@ -235,10 +236,20 @@ export async function status() {
   });
 }
 /** Diagnóstico passo a passo (sem dados sensíveis): login, conexão MQTT, leitura do estado nas duas cifras */
-export async function diag({ testar = false, servidor = 0 } = {}) {
+export async function diag({ testar = false, servidor = 0, ouvir = false } = {}) {
   const out = { passos: [] }, P = x => out.passos.push(x);
   let cfg = await load('gree');
   if (!cfg?.uid) return { ...out, erro: 'ar não configurado (ou senha diferente da usada na configuração)' };
+  if (ouvir) {
+    // só escuta o canal do ar por 40 s, enquanto a pessoa liga/desliga pelo app Gree+
+    const log = [];
+    try {
+      const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
+      cfg = { ...cfg, uid, token }; await save('gree', cfg);
+      await mqttSession(cfg, cfg.devs[0], api => new Promise(r => setTimeout(r, 40000)), { log });
+    } catch (e) { log.push(`erro: ${e.message}`); }
+    return { modo: 'ouvir 40 s', log };
+  }
   out.regiao = cfg.regiao; out.cifraSalva = cfg.cipher || null;
   out.aparelhos = (cfg.devs || []).map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, macFim00: d.mac.endsWith('00'), chaveTam: d.key.length }));
   if (servidor === 0) try {
