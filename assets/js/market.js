@@ -13,11 +13,63 @@ const MARKET_TYPES = ['Ações', 'Fundos imobiliários', 'Fundos'];
 const TICKER_RE = /\b([A-Z]{4}\d{1,2}F?)\b/;
 
 const Market = {
-  load() { const m = DB.mercado || {}; return { q: m.cotacoes || {}, radar: m.radar || null, at: m.status?.at || null, status: m.status || null }; },
-  get error() { const st = this.load().status; return st && !st.ok ? st.error : null; },
-  /** sem o segredo BRAPI_TOKEN no GitHub, o job só consegue os 4 tickers de teste */
-  sandbox() { return this.load().status?.mode === 'sandbox'; },
+  load() {
+    const m = DB.mercado || {}, q = m.cotacoes || {};
+    const at = Object.values(q).map(x => x?.at || '').concat(m.status?.at || '').sort().pop() || null;
+    return { q, radar: m.radar || null, at, status: m.status || null };
+  },
+  get error() { if (this.lastErr) return this.lastErr; const st = this.load().status; return st && !st.ok ? st.error : null; },
+  sandbox() { return !BRAPI_TOKEN && this.load().status?.mode === 'sandbox'; },
   allowed(t) { return !this.sandbox() || SANDBOX.includes(t); },
+  busy: false, lastErr: null, missing: new Set(),
+
+  /** Busca agora, direto do app: GET /api/v2/stocks/quote?symbols=A,B (Authorization: Bearer).
+      Trata 401, 404 (isola o ticker), 429 (Retry-After) e campos null. Grava no Firebase para os outros aparelhos. */
+  async refresh(tickers) {
+    tickers = [...new Set(tickers.map(t => String(t).toUpperCase()))].filter(t => /^[A-Z]{4}\d{1,2}F?$/.test(t) && this.allowed(t));
+    if (!tickers.length || this.busy) return {};
+    this.busy = true; this.lastErr = null;
+    const out = {}, n = v => (v == null || v === '' || isNaN(+v)) ? null : +v;
+    const call = async (syms, tries = 0) => {
+      const res = await fetch(`https://brapi.dev/api/v2/stocks/quote?symbols=${encodeURIComponent(syms.join(','))}`, { headers: BRAPI_TOKEN ? { Authorization: `Bearer ${BRAPI_TOKEN}` } : {}, cache: 'no-store' });
+      if (res.status === 429) {
+        const wait = Math.min(n(res.headers.get('retry-after')) ?? 20, 60);
+        if (tries < 1) { await new Promise(r => setTimeout(r, wait * 1000)); return call(syms, tries + 1); }
+        throw Object.assign(new Error('Limite de consultas da brapi atingido. Tente mais tarde.'), { stop: true });
+      }
+      if (res.status === 401) throw Object.assign(new Error('Chave da brapi inválida ou expirada'), { stop: true });
+      if (res.status === 404) throw Object.assign(new Error('Ativo não encontrado'), { nf: true });
+      if (!res.ok) throw new Error(`brapi: erro ${res.status}`);
+      ((await res.json()).results || []).forEach(r => {
+        const d = r?.data, price = n(d?.regularMarketPrice);
+        if (!r?.requestedSymbol || price == null) return;
+        out[r.requestedSymbol] = clean({ price, chg: n(d.regularMarketChangePercent) ?? 0, name: d.shortName || d.longName || r.symbol, hi52: n(d.fiftyTwoWeekHigh), lo52: n(d.fiftyTwoWeekLow),
+          prev: n(d.regularMarketPreviousClose), logo: d.logourl || null, time: d.regularMarketTime || null, symbol: r.symbol, at: new Date().toISOString() });
+      });
+    };
+    try {
+      for (let i = 0; i < tickers.length; i += 10) {
+        const chunk = tickers.slice(i, i + 10);
+        try { await call(chunk); }
+        catch (e) {
+          if (e.stop) throw e;
+          if (chunk.length > 1) for (const t of chunk) { try { await call([t]); } catch (e2) { if (e2.stop) throw e2; } }
+        }
+      }
+    } catch (e) { this.lastErr = e.message; }
+    finally { this.busy = false; }
+    const miss = tickers.filter(t => !out[t]);
+    if (miss.length && !this.lastErr) { this.lastErr = `Não encontrado na bolsa: ${miss.join(', ')}`; miss.forEach(t => this.missing.add(t)); }
+    Object.keys(out).forEach(t => this.missing.delete(t));
+    if (Object.keys(out).length) {
+      DB.mercado = { ...(DB.mercado || {}), cotacoes: { ...(DB.mercado?.cotacoes || {}), ...out } };
+      Store.update('/mercado/cotacoes', out).catch(() => {});
+      Bus.emit('data', 'market');
+    }
+    return out;
+  },
+  /** horário de pregão (dias úteis, 10h–18h30) */
+  open() { const d = new Date(), h = d.getHours() + d.getMinutes() / 60; return isBusinessDay(today(), false) && h >= 10 && h <= 18.6; },
   notFound(t) { return (this.load().status?.notFound || []).includes(t); },
   quote(t) { const q = t ? this.load().q[t.toUpperCase()] : null; return q && q.price != null ? q : null; },
 
@@ -125,7 +177,11 @@ const Alerts = {
     this.running = true;
     try {
       await this.mergeBgState();
-      const { own, watch } = this.watched();
+      const { own, watch, tickers } = this.watched();
+      // busca direto se faltar cotação ou se a última tiver mais de 15 min (no pregão)
+      const stale = t => { const q = Market.quote(t); return !Market.missing.has(t) && (!q || (Market.open() && Date.now() - new Date(q.at || 0) > 15 * 60e3)); };
+      const need = tickers.filter(stale);
+      if (need.length) await Market.refresh(need);
       if (this.on('stocks') && DB.mercado) this.checkStocks(own, watch);
       const r = Market.load().radar;
       if (this.on('radar') && r?.day === today() && r.items?.length && this.once(`radar|${r.day}`)) {
