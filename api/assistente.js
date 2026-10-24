@@ -36,8 +36,13 @@ export default async function handler(req, res) {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
     const t0 = Date.now();
     const limite = new Promise(r => setTimeout(() => r({ erro: 'diagnóstico passou de 45 s' }), 45000));
-    try { return res.json({ ok: true, ms: 0, ...(await Promise.race([Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0 }), limite])), msTotal: Date.now() - t0 }); }
-    catch (e) { return res.json({ ok: false, erro: e.message, onde: String(e.stack || '').split('\n').slice(0, 3).join(' | '), msTotal: Date.now() - t0 }); }
+    let r;
+    try { r = { ok: true, ...(await Promise.race([Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0 }), limite])) }; }
+    catch (e) { r = { ok: false, erro: e.message, onde: String(e.stack || '').split('\n').slice(0, 3).join(' | ') }; }
+    r.msTotal = Date.now() - t0; r.em = new Date().toISOString();
+    // guarda o resultado (sem dados sensíveis) para leitura posterior em /assistente/diag
+    await fetch(`${(process.env.FIREBASE_DB_URL || 'https://sistema-financeiro-51295-default-rtdb.firebaseio.com').replace(/\/$/, '')}/assistente/diag.json`, { method: 'PUT', body: JSON.stringify(r) }).catch(() => {});
+    return res.json(r);
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'Use POST' });
   if (!checkSenha(req.headers['x-senha'] || b.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' }); }
