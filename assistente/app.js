@@ -129,6 +129,8 @@ async function executar(c) {
   Robot.mood('thinking');
   try {
     if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); Robot.mood('idle'); return falar(descreve(c.alvo, estado)); }
+    if (c.acao === 'youtube' && (c.local || !S.youtube)) return await tocarAqui(c);
+    if (c.acao === 'yt' && Player.ativo) return controlarAqui(c.valor);
     if (c.acao === 'youtube') {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
       const r = await api({ acao: 'cmd', cmd: c });
@@ -149,6 +151,25 @@ async function executar(c) {
   }
 }
 
+/* ── YouTube dentro do app ── */
+async function tocarAqui(c) {
+  Voz.say(`Procurando ${c.valor}…`);
+  const { video } = await api({ acao: 'yt-busca', q: c.valor });
+  const v = await Player.tocar(video);
+  S.musicaLocal = c.musica !== false;
+  return falar(`Tocando ${v.titulo} aqui.${!S.youtube && !c.local ? ' Se quiser na TV, vincule o YouTube dela dizendo: conectar outra TV.' : ''}`, { mood: 'happy', listen: false });
+}
+function controlarAqui(acao) {
+  if (acao === 'pausar') { Player.pausar(); return falar('Pausado.', { listen: false }); }
+  if (acao === 'continuar') { Player.continuar(); return; }
+  if (acao === 'proximo') { return Player.proximo() ? falar('Próximo.', { listen: false }) : falar('Não tenho próximo dessa busca. Peça outra música.'); }
+  if (acao === 'anterior') { return falar('Esse player não volta. Peça a música de novo pelo nome.'); }
+}
+Player.on('estado', st => {
+  if (st === 'tocando' && S.musicaLocal) Robot.dance(true, 112);
+  else if (!S.musicaTV && !Ouvido.musica) Robot.dance(false);
+  if (st === 'erro') falar('Esse vídeo não deixa tocar aqui no app. Tente outro, ou peça para tocar na TV.', { mood: 'sad' });
+});
 const nomeTV = n => /\b(tv|televisao|televisão)\b/i.test(n || '') ? n : `TV ${n}`;
 /* ── inteligência (Gemini): conversa livre; pode devolver comandos para a TV e o ar ── */
 async function pensar(texto) {
@@ -160,6 +181,8 @@ async function pensar(texto) {
     for (const c of r.comandos || []) {
       try {
         if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
+        if (c.acao === 'youtube' && (c.local || !S.youtube)) { const { video } = await api({ acao: 'yt-busca', q: c.valor }); await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue; }
+        if (c.acao === 'yt' && Player.ativo) { ({ pausar: Player.pausar, continuar: Player.continuar, proximo: Player.proximo }[c.valor] || (() => {}))(); continue; }
         const res = await api({ acao: 'cmd', cmd: c });
         if (c.acao === 'tela') S.telaAtiva = res.nome;
         if (c.acao === 'youtube' && (r.musica || c.musica)) dancarComTV();

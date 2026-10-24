@@ -140,3 +140,12 @@ body.locked .panel, body.locked .talk-row, body.locked .devices, body.locked #bt
 @keyframes note-up{0%{opacity:0;transform:translate(0,10px) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translate(var(--dx),-120px) scale(1.2) rotate(20deg)}}
 .icon-btn.ear.active{background:#15803d;border-color:#15803d;color:#fff}
 @media (prefers-reduced-motion: reduce){.robot.dancing,.robot.dancing *{animation-duration:calc(var(--beat,.55s) * 2)!important}}
+
+/* ───── player do YouTube no app ───── */
+.player-wrap{margin:14px auto 0;max-width:460px;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.12)}
+.player-frame{position:relative;aspect-ratio:16/9;background:#000}
+.player-frame iframe,.player-frame #yt-player{position:absolute;inset:0;width:100%;height:100%;border:0}
+.player-bar{display:flex;align-items:center;gap:6px;padding:8px 10px}
+.player-bar span{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-bar button{width:38px;height:38px;border-radius:10px;background:var(--bg);border:1px solid var(--border);font-size:15px}
+body.locked .player-wrap{display:none!important}

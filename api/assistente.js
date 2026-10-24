@@ -68,6 +68,7 @@ export default async function handler(req, res) {
         return res.json({ ok: true, tv });
       }
       case 'yt-pair': return res.json({ ok: true, nome: await YT.pair(b.codigo, b.apelido) });
+      case 'yt-busca': return res.json({ ok: true, video: await YT.search(String(b.q || '')) });
       case 'yt-telas': return res.json({ ok: true, ...(await YT.telas()) });
       case 'yt-remover': await YT.remover(b.nome); return res.json({ ok: true, ...(await YT.telas()) });
       case 'ia-setup': return res.json({ ok: true, modelo: await IA.setup(b.key) });

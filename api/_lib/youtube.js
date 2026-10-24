@@ -114,7 +114,8 @@ export async function search(q) {
       const found = []; const walk = o => { if (!o || typeof o !== 'object' || found.length >= 5) return; if (o.videoRenderer?.videoId) found.push(o.videoRenderer); else Object.values(o).forEach(walk); };
       walk(JSON.parse(m[1]));
       const v = found.find(x => !x.badges?.some(b => /live|ao vivo/i.test(JSON.stringify(b)))) || found[0];
-      if (v) return { id: v.videoId, titulo: (v.title?.runs || []).map(r => r.text).join('') || q, canal: v.ownerText?.runs?.[0]?.text || '' };
+      const info = x => ({ id: x.videoId, titulo: (x.title?.runs || []).map(r => r.text).join('') || q, canal: x.ownerText?.runs?.[0]?.text || '' });
+      if (v) return { ...info(v), opcoes: found.map(info) }; // opções: se um vídeo não puder tocar embutido, o app tenta o próximo
     } catch { /* cai no plano B */ }
   }
   const id = html.match(/"videoId":"([\w-]{11})"/)?.[1];
