@@ -45,7 +45,7 @@
       const plataforma = (t.match(/\b(?:na|no) (netflix|prime|globoplay|globo play|disney|spotify|max)\b/) || [])[1];
       if (plataforma) return { alvo: 'tv', acao: 'app', valor: { 'globo play': 'globoplay' }[plataforma] || plataforma, pedido: q.replace(new RegExp(`\\b(na|no) ${plataforma}\\b`), '').trim() };
       if (q && q.split(' ').length <= 12 && (yt || local || /^(toca|tocar|toque|quero ouvir|ouvir|reproduz)/.test(verboTocar[1]) || /\b(videos?|clipes?|musicas?)\b/.test(raw)))
-        return { alvo: 'tv', acao: 'youtube', valor: q, ...(naTV ? { naTV: true } : { local: true }), musica: !/\b(videos? de|receita|tutorial|aula|noticia|jornal|desenho|filme|documentario|como fazer)\b/.test(raw) };
+        return { alvo: 'tv', acao: 'youtube', valor: q, ...(naTV ? { naTV: true } : local ? { local: true } : {}), musica: !/\b(videos? de|receita|tutorial|aula|noticia|jornal|desenho|filme|documentario|como fazer)\b/.test(raw) };
     }
     // ── TV: tocar/pausar/próximo ──
     if (/^(pausa|pausar|pause|pausa o video|pausa a musica|para o video|para a musica)$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'pausar' };

@@ -11,7 +11,7 @@ const LS = {
 const S = {
   senha: LS.get('as_senha', ''), speak: LS.get('as_speak', true), conversa: LS.get('as_conversa', false),
   apiUrl: LS.get('as_api', ''), aqui: null, senhaVercel: null, tv: false, ar: false, started: false, emptyListens: 0,
-  atento: LS.get('as_atento', true), ia: false, telas: [], telaAtiva: null, hist: [], musicaTV: null
+  atento: LS.get('as_atento', true), destino: LS.get('as_destino', 'app'), ia: false, telas: [], telaAtiva: null, hist: [], musicaTV: null
 };
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
@@ -155,7 +155,8 @@ async function executar(c) {
   Robot.mood('thinking');
   try {
     if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); Robot.mood('idle'); return falar(descreve(c.alvo, estado)); }
-    if (c.acao === 'youtube' && (!c.naTV || !S.youtube)) return await tocarAqui(c.naTV && !S.youtube ? { ...c, motivo: 'Ainda não tenho o YouTube da TV vinculado, então vou tocar aqui.' } : c);
+    if (c.acao === 'youtube') c = { ...c, naTV: querTV(c) };
+    if (c.acao === 'youtube' && (!c.naTV || !S.youtube)) return await tocarAqui(c.naTV && !S.youtube ? { ...c, motivo: 'Ainda não tenho o YouTube de nenhuma TV vinculado, então vou tocar aqui.' } : c);
     if (c.acao === 'yt' && Player.ativo) return controlarAqui(c.valor);
     if (c.acao === 'youtube') {
       Voz.say(`Procurando ${c.valor} no YouTube…`);
@@ -202,6 +203,45 @@ async function procurarTVs() {
   } catch (e) { Robot.mood('idle'); return falar(e.message, { mood: 'sad' }); }
 }
 
+/* ── onde tocar: este celular (padrão) ou a TV escolhida em "Buscar TVs" ── */
+const querTV = c => !c.local && (!!c.naTV || S.destino !== 'app');
+function mostrarDestino() {
+  $('#btn-destino').textContent = S.destino === 'app' ? '📱 Toca no celular' : `📺 Toca na ${S.destino}`;
+}
+async function buscarTVs() {
+  const box = $('#tv-lista');
+  box.classList.remove('hidden'); box.innerHTML = '<p>Procurando TVs…</p>';
+  if (!S.senha) { box.innerHTML = '<p>Primeiro preciso da senha. Diga: me ajuda a configurar.</p>'; return; }
+  let r = { youtube: [], smartthings: [] };
+  try { r = await api({ acao: 'tvs' }); } catch (e) { REG.add('buscar tvs erro', e.message); }
+  const yt = r.youtube || [], st = (r.smartthings || []).filter(t => !yt.some(n => norm(n) === norm(t.nome)));
+  REG.add('buscar tvs', { yt, st: st.map(t => t.nome) });
+  const itens = [{ nome: 'app', rotulo: '📱 Este celular', sub: 'Toca aqui na tela de vídeo do app' }, ...yt.map(n => ({ nome: n, rotulo: `📺 ${n}`, sub: 'Toca no YouTube dessa TV (ela precisa estar ligada)' }))];
+  box.innerHTML = `<p>${yt.length ? 'Onde você quer que eu toque?' : 'Não achei nenhuma TV pronta para tocar vídeos. Vou tocar aqui no celular.'}</p>`;
+  for (const it of itens) {
+    const b = document.createElement('button'); b.className = S.destino === it.nome ? 'sel' : '';
+    b.innerHTML = `${esc(it.rotulo)}<small>${esc(it.sub)}</small>`;
+    b.onclick = async () => {
+      S.destino = it.nome; LS.set('as_destino', it.nome); mostrarDestino(); box.classList.add('hidden');
+      if (it.nome !== 'app') { try { await api({ acao: 'cmd', cmd: { alvo: 'tv', acao: 'tela', valor: it.nome } }); S.telaAtiva = it.nome; } catch {} }
+      Voz.say(it.nome === 'app' ? 'Combinado, vou tocar aqui no celular.' : `Combinado, vou tocar na ${nomeTV(it.nome)}. Deixe o YouTube aberto nela.`);
+    };
+    box.appendChild(b);
+  }
+  if (st.length) { const p = document.createElement('p'); p.textContent = `Também vejo na Samsung: ${st.map(t => t.nome).join(', ')} (essas eu ligo e controlo, mas para escolher vídeo nelas preciso do código do YouTube).`; box.appendChild(p); }
+  const add = document.createElement('button'); add.innerHTML = '➕ Conectar uma TV pelo código do YouTube<small>Em qualquer TV: YouTube → Configurações → Vincular com código</small>';
+  add.onclick = () => { box.classList.add('hidden'); iniciarPasso(S.aqui ? 'yt1' : 'intro'); }; box.appendChild(add);
+  if (!yt.length) { S.destino = 'app'; LS.set('as_destino', 'app'); mostrarDestino(); Voz.say('Não achei nenhuma TV pronta. Vou tocar aqui no celular. Escreva ou fale o que quer ouvir.'); $('#yt-q').focus(); }
+}
+$('#btn-buscar-tvs').onclick = buscarTVs;
+$('#btn-destino').onclick = buscarTVs;
+$('#yt-form').addEventListener('submit', e => {
+  e.preventDefault(); const q = $('#yt-q').value.trim(); if (!q) return; $('#yt-q').value = ''; $('#yt-q').blur();
+  REG.add('busca digitada', q);
+  executar({ alvo: 'tv', acao: 'youtube', valor: q, musica: !/\b(receita|tutorial|aula|noticia|filme|desenho)\b/i.test(norm(q)) });
+});
+mostrarDestino();
+
 /* ── YouTube dentro do app ── */
 async function tocarAqui(c) {
   REG.add('tocarAqui', c.valor, 'já tem vídeo:', !!c.video);
@@ -244,7 +284,7 @@ async function pensar(texto) {
       try {
         if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
         if (c.acao === 'youtube') {
-          let naTV = !!c.naTV && S.youtube;
+          let naTV = querTV(c) && S.youtube;
           let video = null;
           if (naTV) { try { await api({ acao: 'cmd', cmd: c }); if (r.musica || c.musica) dancarComTV(); continue; } catch (e) { if (e.status === 401) throw e; video = e.video; } }
           video = video || (await api({ acao: 'yt-busca', q: c.valor })).video; await Player.tocar(video); S.musicaLocal = !!(r.musica || c.musica); continue;
@@ -327,7 +367,7 @@ async function responder(texto, viaBotao = false) {
   if (/\b(fica|ficar|ser|seja) mais intelig|liga(r)? (a|sua) intelig/.test(n)) return iniciarPasso(S.aqui ? 'ia1' : 'intro');
   if (/^(danca|dance|dancar|danca pra mim|bora dancar|vamos dancar|mexe o esqueleto)\b/.test(n)) { Robot.dance(true, 118); setTimeout(() => { if (!S.musicaTV && !Ouvido.musica) Robot.dance(false); }, 15000); return falar('Solta o som! Olha eu dançando!', { mood: 'happy' }); }
   if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
-  if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return procurarTVs();
+  if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return buscarTVs();
   const c = Comandos.parse(texto);
   REG.add('ouvi', texto, '->', c || 'sem comando', 'IA:', !!S.ia);
   if (c?.erro) return falar(c.erro, { mood: 'sad' });

@@ -2,7 +2,7 @@
    Player.tocar(video) · pausar() · continuar() · proximo() · fechar() · ativo / tocando
    Se um vídeo não puder ser embutido (erro 101/150), tenta a próxima opção da busca. */
 /* registro do que acontece (vai para o servidor, para diagnóstico) */
-const VERSAO_APP = 'v14';
+const VERSAO_APP = 'v15';
 const REG = { linhas: [], envio: null, add(...x) { const l = `${new Date().toLocaleTimeString('pt-BR')} ${x.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(' ')}`; this.linhas.push(l); try { console.log('[reg]', l); } catch {} clearTimeout(this.envio); this.envio = setTimeout(() => this.enviar && this.enviar(), 1500); } };
 window.addEventListener('error', e => REG.add('ERRO JS', e.message, (e.filename || '').split('/').pop(), e.lineno));
 window.addEventListener('unhandledrejection', e => REG.add('ERRO promessa', String(e.reason?.message || e.reason)));
@@ -26,6 +26,8 @@ const Player = (() => {
     fila = (video.opcoes && video.opcoes.length ? video.opcoes : [video]).slice();
     atual = fila.shift() || video;
     wrap.classList.remove('hidden'); titulo.textContent = atual.titulo || '';
+    document.getElementById('pl-abrir').href = `https://www.youtube.com/watch?v=${atual.id}`;
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
     REG.add('player.tocar', atual.id, atual.titulo, 'wrap visível:', !wrap.classList.contains('hidden'));
     await carregarAPI();
     REG.add('API YT carregada:', !!window.YT?.Player);

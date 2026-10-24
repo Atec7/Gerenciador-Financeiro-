@@ -53,11 +53,20 @@
     <div class="bubble" id="bubble" aria-live="polite">Oi! Toque em mim para começarmos.</div>
     <p class="heard" id="heard"></p>
 
+    <!-- onde tocar: este celular ou uma TV -->
+    <div class="onde">
+      <button class="onde-btn" id="btn-destino" aria-label="Onde tocar">📱 Toca no celular</button>
+      <button class="onde-btn primary" id="btn-buscar-tvs">📺 Buscar TVs</button>
+    </div>
+    <div class="tv-lista hidden" id="tv-lista"></div>
+    <form class="yt-form" id="yt-form"><input id="yt-q" placeholder="🔎 Buscar música ou vídeo no YouTube" autocomplete="off" enterkeyhint="search"><button aria-label="Tocar">▶</button></form>
+
     <!-- player do YouTube dentro do app -->
     <div class="player-wrap hidden" id="player-wrap">
       <div class="player-frame"><div id="yt-player"></div><button class="pl-som hidden" id="pl-som">🔊 Toque para ouvir</button></div>
       <div class="player-bar"><span id="pl-title"></span>
         <button id="pl-toggle" aria-label="Pausar ou continuar">⏸</button><button id="pl-next" aria-label="Próximo">⏭</button><button id="pl-close" aria-label="Fechar">✕</button></div>
+      <a class="pl-abrir" id="pl-abrir" target="_blank" rel="noopener">Não tocou? Abrir no app do YouTube ↗</a>
     </div>
 
     <!-- respostas rápidas e campos do passo atual -->
