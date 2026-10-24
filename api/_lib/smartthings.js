@@ -66,12 +66,30 @@ async function token() {
 }
 
 /** primeira TV da conta (tem capacidade de canal/entrada ou nome com "TV") */
-async function findTv(access) {
+/** todas as TVs da conta SmartThings (Samsung e de outras marcas adicionadas ao app SmartThings) */
+async function listarTvs(access) {
   const { items = [] } = await st('/v1/devices', { token: access });
   const caps = d => (d.components || []).flatMap(c => (c.capabilities || []).map(x => x.id));
-  const tv = items.find(d => caps(d).includes('tvChannel') || caps(d).includes('samsungvd.mediaInputSource') || d.ocf?.ocfDeviceType === 'oic.d.tv')
-    || items.find(d => /tv/i.test(`${d.label} ${d.name}`) && caps(d).includes('switch'));
-  return tv ? { id: tv.deviceId, nome: tv.label || tv.name } : null;
+  const ehTv = d => caps(d).includes('tvChannel') || caps(d).includes('samsungvd.mediaInputSource') || d.ocf?.ocfDeviceType === 'oic.d.tv'
+    || /x\.com\.st\.d\.(tv|monitor)/i.test(d.ocf?.ocfDeviceType || '') || (/\b(tv|televis)/i.test(`${d.label} ${d.name}`) && caps(d).includes('switch'));
+  return items.filter(ehTv).map(d => ({ id: d.deviceId, nome: d.label || d.name, marca: d.ocf?.manufacturerName || d.manufacturerName || '' }));
+}
+async function findTv(access) { return (await listarTvs(access))[0] || null; }
+const normT = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+/** procura as TVs na conta e devolve a lista (marca qual está em uso) */
+export async function tvs() {
+  const cfg = await token(); const lista = await listarTvs(cfg.access);
+  return lista.map(t => ({ nome: t.nome, marca: t.marca, ativa: t.id === cfg.tv?.id }));
+}
+/** escolhe a TV da SmartThings pelo nome ou posição; null se não achar */
+export async function escolher(nome) {
+  const cfg = await token(); const lista = await listarTvs(cfg.access);
+  const n = normT(nome).replace(/^(a |o )?(tv|televisao) (da|do|de) /, '').replace(/^(a |o )/, '');
+  const pos = { primeira: 0, '1': 0, segunda: 1, '2': 1, terceira: 2, '3': 2 }[n];
+  const t = lista[pos] || lista.find(x => normT(x.nome) === n) || lista.find(x => normT(x.nome).includes(n) || (n.length > 2 && n.includes(normT(x.nome))));
+  if (!t) return null;
+  await save('st', { ...cfg, tv: { id: t.id, nome: t.nome } });
+  return t.nome;
 }
 
 export const APPS = {

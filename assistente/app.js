@@ -151,6 +151,23 @@ async function executar(c) {
   }
 }
 
+/* ── procurar TVs: conta SmartThings + TVs vinculadas pelo YouTube ── */
+async function procurarTVs() {
+  if (!S.aqui || !S.senha) return falar('Antes, preciso estar configurado. Diga: me ajuda a configurar.');
+  Robot.mood('thinking'); Voz.say('Procurando TVs…');
+  try {
+    const r = await api({ acao: 'tvs' });
+    const st = r.smartthings || [], yt = r.youtube || [];
+    S.telas = yt; S.telaAtiva = r.youtubeAtiva;
+    const partes = [];
+    if (st.length) partes.push(`Na sua conta Samsung achei ${st.length === 1 ? 'a TV' : `${st.length} TVs`}: ${st.map(t => t.nome).join(', ')}${st.length > 1 ? `. Estou usando a ${st.find(t => t.ativa)?.nome || st[0].nome}` : ''}.`);
+    if (yt.length) partes.push(`Pelo YouTube conheço: ${yt.join(', ')}.`);
+    if (!partes.length) return falar('Não encontrei nenhuma TV. Para eu achar uma TV Samsung, adicione ela no app SmartThings. Para qualquer outra marca, diga: conectar outra TV, e use o código do YouTube.', { mood: 'sad' });
+    const muitas = st.length + yt.length > 1;
+    return falar(`${partes.join(' ')}${muitas ? ' Para trocar, diga: usar a TV e o nome dela.' : ''} Para achar outras, adicione no app SmartThings, ou diga conectar outra TV para usar o código do YouTube.`, { mood: 'happy' });
+  } catch (e) { Robot.mood('idle'); return falar(e.message, { mood: 'sad' }); }
+}
+
 /* ── YouTube dentro do app ── */
 async function tocarAqui(c) {
   Voz.say(`Procurando ${c.valor}…`);
@@ -252,7 +269,7 @@ async function responder(texto, viaBotao = false) {
   if (/\b(fica|ficar|ser|seja) mais intelig|liga(r)? (a|sua) intelig/.test(n)) return iniciarPasso(S.aqui ? 'ia1' : 'intro');
   if (/^(danca|dance|dancar|danca pra mim|bora dancar|vamos dancar|mexe o esqueleto)\b/.test(n)) { Robot.dance(true, 118); setTimeout(() => { if (!S.musicaTV && !Ouvido.musica) Robot.dance(false); }, 15000); return falar('Solta o som! Olha eu dançando!', { mood: 'happy' }); }
   if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
-  if (/\b(quais|que) tvs?\b|\btvs? (vinculadas|conectadas)\b/.test(n)) return falar(S.telas.length ? `Eu conheço ${S.telas.length === 1 ? 'a TV' : `${S.telas.length} TVs`}: ${S.telas.join(', ')}. Estou usando a ${S.telaAtiva}.` : 'Ainda não vinculei nenhuma TV pelo YouTube.');
+  if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return procurarTVs();
   const c = Comandos.parse(texto);
   if (c?.erro) return falar(c.erro, { mood: 'sad' });
   if (c) return executar(c);

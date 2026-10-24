@@ -76,6 +76,10 @@ export default async function handler(req, res) {
         return res.json({ ok: true, tv });
       }
       case 'yt-pair': return res.json({ ok: true, nome: await YT.pair(b.codigo, b.apelido) });
+      case 'tvs': {
+        const [st, yt] = await Promise.all([ST.tvs().catch(e => ({ erro: e.message })), YT.telas().catch(() => ({ telas: [] }))]);
+        return res.json({ ok: true, smartthings: Array.isArray(st) ? st : [], smartthingsErro: st.erro || null, youtube: yt.telas, youtubeAtiva: yt.ativa });
+      }
       case 'yt-busca': return res.json({ ok: true, video: await YT.search(String(b.q || '')) });
       case 'yt-telas': return res.json({ ok: true, ...(await YT.telas()) });
       case 'yt-remover': await YT.remover(b.nome); return res.json({ ok: true, ...(await YT.telas()) });
@@ -101,7 +105,12 @@ export default async function handler(req, res) {
           await YT.play(video.id);
           return res.json({ ok: true, video, tela: tela.nome });
         }
-        if (c.alvo === 'tv' && c.acao === 'tela') return res.json({ ok: true, nome: await YT.escolher(c.valor) });
+        if (c.alvo === 'tv' && c.acao === 'tela') {
+          // troca nas duas listas: TVs da SmartThings e TVs vinculadas pelo YouTube
+          const [st, yt] = await Promise.all([ST.escolher(c.valor).catch(() => null), YT.escolher(c.valor).catch(() => null)]);
+          if (!st && !yt) throw new Error(`Não achei a TV "${c.valor}". Diga "procurar TVs" para eu listar as que encontro.`);
+          return res.json({ ok: true, nome: st || yt, smartthings: !!st, youtube: !!yt });
+        }
         if (c.alvo === 'tv' && c.acao === 'yt') {
           try { await YT.controle(c.valor); }
           catch (e) { if (!e.setup || !['pausar', 'continuar'].includes(c.valor)) throw e; await ST.command({ acao: c.valor === 'pausar' ? 'pause' : 'play' }); }
