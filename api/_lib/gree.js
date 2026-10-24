@@ -66,7 +66,8 @@ async function devices(base, uid, token) {
   for (const h of home) {
     const d = await cloud(base, '/App/GetDevsInRoomsOfHomeV2', body({ token, homeId: h.id, uid }, ['token', 'uid', 'homeId']));
     for (const room of d.rooms || []) for (const dev of room.devs || [])
-      out.push({ nome: String(dev.name || 'Ar').trim(), mac: String(dev.mac).trim(), key: String(dev.key).trim(), online: dev.online !== 0 });
+      out.push({ nome: String(dev.name || 'Ar').trim(), mac: String(dev.mac).trim(), key: String(dev.key).trim(), online: dev.online !== 0,
+        bruto: Object.fromEntries(Object.entries(dev).filter(([k]) => !/^(mac|key|pmac|password|psw|token)$/i.test(k)).map(([k, v]) => [k, typeof v === 'string' && v.length > 40 ? v.slice(0, 40) + '…' : v])) });
   }
   // aparelhos repetidos com a mesma chave: fica o MAC terminado em "00" (o que responde)
   const byKey = {};
@@ -113,7 +114,7 @@ const decodePack = (m, key) => {
 
 /** Uma sessão MQTT curta: conecta, publica um ou mais pedidos e espera as respostas.
     Falha de verdade se não conseguir conectar (antes, um comando "sumia" sem aviso). */
-function mqttSession(cfg, dev, run, { host, log } = {}) {
+function mqttSession(cfg, dev, run, { host, log, max = 22000 } = {}) {
   return new Promise((resolve, reject) => {
     const h = process.env.GREE_MQTT_HOST || host || cfg.mqttHost || REGIOES[cfg.regiao][1], parent = parentMac(dev.mac);
     const t0 = Date.now(), L = (...a) => log?.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${a.join(' ')}`);
@@ -124,7 +125,7 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
     let done = false, connected = false;
     const waiters = [];
     const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); try { client.end(true); } catch {} err ? reject(err) : resolve(val); };
-    const timer = setTimeout(() => finish(connected ? new Error('timeout') : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), 22000);
+    const timer = setTimeout(() => finish(connected ? new Error('timeout') : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), max);
     client.on('error', e => { L('erro', e.message); const auth = /auth|Not authorized|bad user|password/i.test(e.message); finish(Object.assign(new Error(auth ? 'auth' : `Nuvem da Gree: ${e.message}`), { auth, noConnect: !connected })); });
     client.on('close', () => { if (!connected) L('conexão fechada antes de conectar'); else if (!done) L('conexão fechada pelo servidor'); });
     if (log) client.on('packetreceive', pk => { if (['puback', 'suback', 'connack'].includes(pk.cmd)) L('pacote', pk.cmd, pk.cmd === 'connack' ? `rc=${pk.returnCode ?? pk.reasonCode}` : `id=${pk.messageId}`); });
@@ -246,7 +247,7 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
     try {
       const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
       cfg = { ...cfg, uid, token }; await save('gree', cfg);
-      await mqttSession(cfg, cfg.devs[0], api => new Promise(r => setTimeout(r, 40000)), { log });
+      await mqttSession(cfg, cfg.devs[0], api => new Promise(r => setTimeout(r, 40000)), { log, max: 45000 });
     } catch (e) { log.push(`erro: ${e.message}`); }
     return { modo: 'ouvir 40 s', log };
   }
@@ -256,7 +257,8 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
     const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
     cfg = { ...cfg, uid, token }; await save('gree', cfg); P('login: ok');
     const devs = await devices(base, uid, token);
-    out.aparelhosAgora = devs.map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, mudouMac: !cfg.devs.some(x => x.mac === d.mac) }));
+    out.aparelhosAgora = devs.map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, mudouMac: !cfg.devs.some(x => x.mac === d.mac), campos: d.bruto }));
+    try { const h = await cloud(base, '/App/GetHomes', body({ token, uid }, ['token', 'uid'])); out.camposCasa = Object.keys(h); } catch {}
     if (devs.length) { cfg.devs = devs; await save('gree', cfg); }
   } catch (e) { P(`login: ERRO ${e.message}`); return out; }
   const dev = cfg.devs[0];
