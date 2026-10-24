@@ -126,7 +126,8 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
     const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); try { client.end(true); } catch {} err ? reject(err) : resolve(val); };
     const timer = setTimeout(() => finish(connected ? new Error('timeout') : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), 22000);
     client.on('error', e => { L('erro', e.message); const auth = /auth|Not authorized|bad user|password/i.test(e.message); finish(Object.assign(new Error(auth ? 'auth' : `Nuvem da Gree: ${e.message}`), { auth, noConnect: !connected })); });
-    client.on('close', () => { if (!connected) L('conexão fechada antes de conectar'); });
+    client.on('close', () => { if (!connected) L('conexão fechada antes de conectar'); else if (!done) L('conexão fechada pelo servidor'); });
+    if (log) client.on('packetreceive', pk => { if (['puback', 'suback', 'connack'].includes(pk.cmd)) L('pacote', pk.cmd, pk.cmd === 'connack' ? `rc=${pk.returnCode ?? pk.reasonCode}` : `id=${pk.messageId}`); });
     client.on('message', (topic, payload) => {
       let m; try { m = JSON.parse(payload.toString()); } catch { L('msg', topic, '(não é JSON)'); return; }
       let d = null; if (m.pack) { try { d = decodePack(m, dev.key); } catch (e) { L('msg', topic, `t=${m.t}`, 'não decifrou', m.tag ? '(GCM)' : '(ECB)'); } }
@@ -135,8 +136,10 @@ function mqttSession(cfg, dev, run, { host, log } = {}) {
     });
     client.on('connect', () => {
       connected = true; L('conectado em', h);
-      client.subscribe([`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`], { qos: 1 }, async err => {
+      const extra = log ? [`response/${parent}`, `status/${parent}`, `+/${parent}/#`, `${parent}/#`] : [];
+      client.subscribe([`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`, ...extra], { qos: 1 }, async (err, granted) => {
         if (err) return finish(err);
+        if (log) L('inscrições:', (granted || []).map(g => `${g.topic.replace(parent, 'MAC')}=${g.qos === 128 ? 'RECUSADA' : 'ok'}`).join(' '));
         const api = {
           send(pack, cipher = cfg.cipher || 1) {
             const enc = cipher === 2 ? gcmEncrypt(JSON.stringify(pack), dev.key) : { pack: ecbEncrypt(JSON.stringify(pack), dev.key) };
