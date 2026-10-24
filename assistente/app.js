@@ -455,9 +455,14 @@ if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
   const p = await ping(); S.aqui = !!p; S.senhaVercel = p?.senhaConfigurada ?? null;
   if (S.aqui && S.senha) api({ acao: 'status' }).then(s => { S.tv = s.tv; S.ar = s.ar; atualizaAparelhos(); }).catch(() => {});
   const qs = new URLSearchParams(location.search);
-  if (qs.get('conectado') === 'tv') {
+  if (qs.get('st_code')) {
+    // voltou do login da Samsung: conclui a conexão da TV enviando a senha
     history.replaceState(null, '', location.pathname);
-    const nome = qs.get('nome');
+    Robot.mood('thinking'); $('#bubble').textContent = 'Concluindo a conexão com a Samsung…';
+    let nome = null;
+    try { const r = await api({ acao: 'st-code', code: qs.get('st_code'), state: qs.get('st_state') }); nome = r.tv?.nome || ''; }
+    catch (e) { Robot.mood('sad', 4000); LS.set('as_passo', 'tv2'); LS.set('as_prefixo', e.message); $('#bubble').textContent = `${e.message} Toque em mim para tentar de novo.`; return; }
+    Robot.mood('idle');
     if (nome) { S.tv = true; atualizaAparelhos(); Robot.mood('happy', 4000); LS.set('as_passo', 'tv-teste'); LS.set('as_prefixo', `TV conectada: ${nome}!`); $('#bubble').textContent = `TV conectada: ${nome}! Toque em mim para continuar.`; }
     else { LS.set('as_passo', 'tv-h1'); LS.set('as_prefixo', 'Conectei sua conta Samsung, mas não achei a TV.'); $('#bubble').textContent = 'Conectei sua conta Samsung, mas não achei a TV. Toque em mim que eu te ajudo.'; }
     return;

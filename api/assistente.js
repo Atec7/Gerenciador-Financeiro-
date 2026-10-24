@@ -4,7 +4,7 @@
    Toda chamada exige a senha do assistente (variável ASSISTENTE_SENHA na Vercel). */
 import * as ST from './_lib/smartthings.js';
 import * as Gree from './_lib/gree.js';
-import { checkSenha, senha, hmac } from './_lib/store.js';
+import { checkSenha, configured, hmac } from './_lib/store.js';
 
 const host = req => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
 const html = (res, status, title, msg) => res.status(status).setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -18,24 +18,21 @@ export default async function handler(req, res) {
   if (q.acao === 'ping' || req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') return res.status(204).end();
-    return res.json({ ok: true, assistente: true, senhaConfigurada: !!senha() });
+    return res.json({ ok: true, assistente: true, senhaConfigurada: configured() });
   }
-  if (!senha()) return res.status(500).json({ ok: false, erro: 'Falta configurar a variável ASSISTENTE_SENHA na Vercel.', setup: 'senha-vercel' });
+  if (!configured()) return res.status(500).json({ ok: false, erro: 'Falta configurar a variável ASSISTENTE_SENHA na Vercel.', setup: 'senha-vercel' });
   const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
   const acao = q.acao || b.acao;
 
   // volta do login da Samsung (não tem a senha, mas traz um "state" assinado)
+  // volta do login da Samsung: repassa o código ao robô, que conclui a conexão enviando a senha
   if (acao === 'st-callback') {
     if (q.error) return html(res, 400, 'TV não conectada', `A Samsung respondeu: ${String(q.error_description || q.error)}`);
-    const [nonce, sig] = String(q.state || '').split('.');
-    if (!nonce || sig !== hmac(nonce) || Date.now() - Number(nonce) > 30 * 60e3) return html(res, 400, 'Link expirado', 'Comece a conexão da TV de novo pelo assistente.');
-    try { const tv = await ST.callback(String(q.code || ''), host(req)); res.status(302).setHeader('Location', `/assistente/?conectado=tv&nome=${encodeURIComponent(tv?.nome || '')}`).end(); }
-    catch (e) { html(res, 500, 'TV não conectada', e.message); }
-    return;
+    return res.status(302).setHeader('Location', `/assistente/?st_code=${encodeURIComponent(String(q.code || ''))}&st_state=${encodeURIComponent(String(q.state || ''))}`).end();
   }
 
   if (req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'Use POST' });
-  if (!checkSenha(req.headers['x-senha'] || b.senha)) return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' });
+  if (!checkSenha(req.headers['x-senha'] || b.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha do assistente incorreta.' }); }
 
   try {
     switch (acao) {
@@ -47,6 +44,12 @@ export default async function handler(req, res) {
         if (!b.pat) throw new Error('Cole o token da SmartThings.');
         const nonce = String(Date.now());
         return res.json({ ok: true, url: await ST.setup(String(b.pat).trim(), host(req), `${nonce}.${hmac(nonce)}`) });
+      }
+      case 'st-code': {
+        const [nonce, sig] = String(b.state || '').split('.');
+        if (!nonce || sig !== hmac(nonce) || Date.now() - Number(nonce) > 30 * 60e3) throw new Error('O login da Samsung expirou. Vamos conectar a TV de novo.');
+        const tv = await ST.callback(String(b.code || ''), host(req));
+        return res.json({ ok: true, tv });
       }
       case 'gree-setup': {
         if (!b.email || !b.password) throw new Error('Informe o e-mail e a senha do Gree+.');

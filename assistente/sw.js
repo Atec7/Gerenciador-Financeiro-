@@ -1,6 +1,6 @@
 /* Service worker do Assistente: permite instalar como app e abrir a tela sem internet.
    Os comandos sempre vão para o servidor (precisam de internet). */
-const VERSION = 'assistente-v2';
+const VERSION = 'assistente-v3';
 const FILES = ['./', './index.html', './style.css', './app.js', './parser.js', './robot.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x.startsWith('assistente-') && x !== VERSION).map(x => caches.delete(x)))).then(() => self.clients.claim())));
