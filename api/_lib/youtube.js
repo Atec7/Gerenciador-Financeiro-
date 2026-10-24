@@ -11,21 +11,50 @@ const post = (url, data, params) => fetch(params ? `${url}?${form(params)}` : ur
   method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form(data)
 });
 
-/** pareia com o código de 12 números mostrado no YouTube da TV */
-export async function pair(codigo) {
+/* várias TVs: { telas: [{ screenId, nome, deviceId, samsung }], ativa: screenId } (migra o formato antigo de uma TV só) */
+async function carregar() {
+  const c = await load('yt');
+  if (!c) return { telas: [], ativa: null };
+  if (c.screenId && !c.telas) return { telas: [{ screenId: c.screenId, nome: c.nome || 'TV', deviceId: c.deviceId, samsung: true }], ativa: c.screenId };
+  return { telas: c.telas || [], ativa: c.ativa || c.telas?.[0]?.screenId || null };
+}
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+export async function telas() { const c = await carregar(); return { telas: c.telas.map(t => t.nome), ativa: c.telas.find(t => t.screenId === c.ativa)?.nome || null }; }
+/** escolhe a TV ativa pelo nome ("quarto", "sala", "a do meu amigo") ou pela posição ("segunda") */
+export async function escolher(nome) {
+  const c = await carregar(); if (!c.telas.length) throw Object.assign(new Error('Nenhuma TV vinculada ao YouTube ainda.'), { setup: 'youtube' });
+  const n = norm(nome).replace(/^(a |o )?(tv|televisao) (da|do|de) /, '').replace(/^(a |o )/, '');
+  const pos = { primeira: 0, '1': 0, segunda: 1, '2': 1, terceira: 2, '3': 2, quarta: 3, '4': 3 }[n];
+  const t = c.telas[pos] || c.telas.find(x => norm(x.nome) === n) || c.telas.find(x => norm(x.nome).includes(n) || n.includes(norm(x.nome)));
+  if (!t) throw new Error(`Não achei a TV "${nome}". As que eu conheço são: ${c.telas.map(x => x.nome).join(', ')}.`);
+  await save('yt', { telas: c.telas, ativa: t.screenId });
+  return t.nome;
+}
+export async function remover(nome) {
+  const c = await carregar(); const n = norm(nome);
+  const resto = c.telas.filter(x => !(norm(x.nome) === n || norm(x.nome).includes(n)));
+  if (resto.length === c.telas.length) throw new Error(`Não achei a TV "${nome}".`);
+  await save('yt', { telas: resto, ativa: resto.some(x => x.screenId === c.ativa) ? c.ativa : resto[0]?.screenId || null });
+}
+
+/** pareia com o código de 12 números mostrado no YouTube da TV (qualquer marca); vira a TV ativa */
+export async function pair(codigo, apelido) {
   const code = String(codigo || '').replace(/\D/g, '');
   if (code.length < 10) throw new Error('O código tem 12 números. Ele aparece no YouTube da TV, em Configurações, Vincular com código de TV.');
   const res = await post(`${BASE}/pairing/get_screen`, { pairing_code: code });
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.screen?.screenId) throw new Error('O YouTube não aceitou esse código. Ele muda a cada poucos minutos: gere outro na TV e tente de novo.');
-  await save('yt', { screenId: j.screen.screenId, nome: j.screen.name, deviceId: crypto.randomUUID() });
-  return j.screen.name || 'TV';
+  const c = await carregar(), id = j.screen.screenId;
+  const nome = String(apelido || '').trim() || j.screen.name || `TV ${c.telas.length + 1}`;
+  const tela = { screenId: id, nome, deviceId: c.telas.find(t => t.screenId === id)?.deviceId || crypto.randomUUID(), samsung: /samsung/i.test(`${j.screen.name} ${apelido || ''}`) };
+  await save('yt', { telas: [...c.telas.filter(t => t.screenId !== id), tela], ativa: id });
+  return nome;
 }
-export async function configured() { const c = await load('yt'); return !!c?.screenId; }
+export async function configured() { const c = await carregar(); return c.telas.length > 0; }
 
 /** abre uma sessão de controle: token novo → conecta → devolve função para mandar comandos */
 async function session() {
-  const cfg = await load('yt');
+  const c = await carregar(), cfg = c.telas.find(t => t.screenId === c.ativa) || c.telas[0];
   if (!cfg?.screenId) throw Object.assign(new Error('O YouTube da TV ainda não está ligado a mim.'), { setup: 'youtube' });
   const tr = await post(`${BASE}/pairing/get_lounge_token_batch`, { screen_ids: cfg.screenId });
   const tj = await tr.json().catch(() => null), token = tj?.screens?.[0]?.loungeToken;
@@ -53,7 +82,7 @@ async function session() {
     const r = await post(`${BASE}/bc/bind`, body, { name: NAME, loungeIdToken: token, SID: sid, AID: aid, gsessionid: gsession, device: 'REMOTE_CONTROL', app: 'youtube-desktop', VER: 8, v: 2, RID: ofs });
     if (!r.ok) throw new Error(`YouTube: o comando falhou (${r.status}).`);
   };
-  return { cmd, telaOnline };
+  return { cmd, telaOnline, tela: cfg };
 }
 /* respostas vêm em blocos: uma linha com o tamanho e, nas seguintes, um JSON (lido até fechar) */
 function parseChunks(text) {
@@ -67,7 +96,7 @@ function parseChunks(text) {
 }
 
 /** está com o app YouTube aberto na TV? */
-export async function telaDisponivel() { try { return (await session()).telaOnline; } catch (e) { if (e.setup) throw e; return false; } }
+export async function telaDisponivel() { try { const s = await session(); return { online: s.telaOnline, nome: s.tela.nome, samsung: !!s.tela.samsung }; } catch (e) { if (e.setup) throw e; return { online: false }; } }
 
 export async function play(videoId) { const s = await session(); await s.cmd('setPlaylist', { videoId, currentTime: 0, currentIndex: 0, videoIds: videoId }); return s.telaOnline; }
 const SIMPLES = { pausar: 'pause', continuar: 'play', proximo: 'next', anterior: 'previous' };

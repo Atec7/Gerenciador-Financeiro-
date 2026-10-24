@@ -49,5 +49,21 @@ const Robot = (() => {
   }
   function word() { if (talking) el.style.setProperty('--open', '1'); }
 
-  return { mood: setMood, talk, word, get current() { return mood; } };
+  /* dança: balança no ritmo (bpm) e solta notas musicais */
+  let dancando = false, notasTimer = null;
+  function dance(on, bpm = 110) {
+    bpm = Math.max(70, Math.min(170, bpm || 110));
+    el.style.setProperty('--beat', `${(60 / bpm).toFixed(3)}s`);
+    if (on === dancando) return;
+    dancando = on; el.classList.toggle('dancing', on);
+    clearInterval(notasTimer);
+    if (on) notasTimer = setInterval(nota, 60000 / bpm * 2);
+  }
+  function nota() {
+    const n = document.createElement('span'); n.className = 'note'; n.textContent = Math.random() < 0.5 ? '♪' : '♫';
+    n.style.left = `${15 + Math.random() * 70}%`; n.style.setProperty('--dx', `${(Math.random() * 60 - 30).toFixed(0)}px`);
+    el.appendChild(n); setTimeout(() => n.remove(), 2200);
+  }
+
+  return { mood: setMood, talk, word, dance, get current() { return mood; }, get dancando() { return dancando; } };
 })();

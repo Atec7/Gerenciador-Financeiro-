@@ -121,3 +121,22 @@ button{cursor:pointer;border:0;background:none}
 .remote button:active{transform:scale(.95)}
 /* trava: sem senha, só o robô e o campo de senha */
 body.locked .panel, body.locked .talk-row, body.locked .devices, body.locked #btn-conv, body.locked #btn-cfg { display: none !important; }
+
+/* ───── dança ───── */
+.robot.dancing{animation:dance-body calc(var(--beat,.55s) * 2) ease-in-out infinite}
+.robot.dancing .head{animation:dance-head calc(var(--beat,.55s) * 2) ease-in-out infinite;transform-origin:50% 90%}
+.robot.dancing .antenna{animation:dance-ant var(--beat,.55s) ease-in-out infinite;transform-origin:50% 100%}
+.robot.dancing .eye{height:16%;top:30%;background:transparent;box-shadow:none;border:6px solid var(--glow);border-bottom:0;border-radius:50% 50% 0 0/100% 100% 0 0;filter:drop-shadow(0 0 8px var(--glow))}
+.robot.dancing .eye .shine{display:none}
+.robot.dancing .cheek{opacity:.7}
+.robot.dancing .mouth{animation:dance-mouth var(--beat,.55s) ease-in-out infinite;height:14%;width:28%}
+.robot.dancing .bulb{animation:dance-bulb calc(var(--beat,.55s) * 4) linear infinite}
+@keyframes dance-body{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-10px) rotate(-4deg)}50%{transform:translateY(0) rotate(0)}75%{transform:translateY(-10px) rotate(4deg)}}
+@keyframes dance-head{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(6deg)}}
+@keyframes dance-ant{0%,100%{transform:translateX(-50%) rotate(-12deg)}50%{transform:translateX(-50%) rotate(12deg)}}
+@keyframes dance-mouth{0%,100%{transform:translateX(-50%) scaleY(.7)}50%{transform:translateX(-50%) scaleY(1.15)}}
+@keyframes dance-bulb{0%{filter:hue-rotate(0)}100%{filter:hue-rotate(360deg)}}
+.robot .note{position:absolute;top:8%;font-size:28px;color:var(--accent-2);text-shadow:0 0 10px var(--accent-2);pointer-events:none;animation:note-up 2.2s ease-out forwards}
+@keyframes note-up{0%{opacity:0;transform:translate(0,10px) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translate(var(--dx),-120px) scale(1.2) rotate(20deg)}}
+.icon-btn.ear.active{background:#15803d;border-color:#15803d;color:#fff}
+@media (prefers-reduced-motion: reduce){.robot.dancing,.robot.dancing *{animation-duration:calc(var(--beat,.55s) * 2)!important}}

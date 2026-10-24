@@ -5,6 +5,7 @@
 import * as ST from './_lib/smartthings.js';
 import * as Gree from './_lib/gree.js';
 import * as YT from './_lib/youtube.js';
+import * as IA from './_lib/ia.js';
 import { checkSenha, configured, hmac } from './_lib/store.js';
 
 const host = req => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
@@ -52,8 +53,8 @@ export default async function handler(req, res) {
   try {
     switch (acao) {
       case 'status': {
-        const [tv, ar, youtube] = await Promise.all([ST.configured().catch(() => false), Gree.configured().catch(() => false), YT.configured().catch(() => false)]);
-        return res.json({ ok: true, tv, ar, youtube });
+        const [tv, ar, yt, ia] = await Promise.all([ST.configured().catch(() => false), Gree.configured().catch(() => false), YT.telas().catch(() => ({ telas: [] })), IA.configured().catch(() => false)]);
+        return res.json({ ok: true, tv, ar, youtube: yt.telas.length > 0, telas: yt.telas, telaAtiva: yt.ativa, ia });
       }
       case 'st-setup': {
         if (!b.pat) throw new Error('Cole o token da SmartThings.');
@@ -66,7 +67,14 @@ export default async function handler(req, res) {
         const tv = await ST.callback(String(b.code || ''), host(req));
         return res.json({ ok: true, tv });
       }
-      case 'yt-pair': return res.json({ ok: true, nome: await YT.pair(b.codigo) });
+      case 'yt-pair': return res.json({ ok: true, nome: await YT.pair(b.codigo, b.apelido) });
+      case 'yt-telas': return res.json({ ok: true, ...(await YT.telas()) });
+      case 'yt-remover': await YT.remover(b.nome); return res.json({ ok: true, ...(await YT.telas()) });
+      case 'ia-setup': return res.json({ ok: true, modelo: await IA.setup(b.key) });
+      case 'conversa': {
+        const [t, tv, ar] = await Promise.all([YT.telas().catch(() => ({ telas: [] })), ST.configured().catch(() => false), Gree.configured().catch(() => false)]);
+        return res.json({ ok: true, ...(await IA.conversar(b.texto, b.historico, { tv, ar, telas: t.telas, telaAtiva: t.ativa })) });
+      }
       case 'gree-setup': {
         if (!b.email || !b.password) throw new Error('Informe o e-mail e a senha do Gree+.');
         return res.json({ ok: true, ...(await Gree.setup(String(b.email).trim(), String(b.password), b.regiao || 'South American')) });
@@ -75,11 +83,16 @@ export default async function handler(req, res) {
         const c = b.cmd || {};
         if (c.alvo === 'tv' && c.acao === 'youtube') {
           // pesquisa, garante o app YouTube aberto na TV e manda tocar
-          const [video, aberto] = await Promise.all([YT.search(String(c.valor || '')), YT.telaDisponivel()]);
-          if (!aberto) { await ST.command({ acao: 'app', valor: 'youtube' }).catch(() => {}); await new Promise(r => setTimeout(r, 9000)); }
+          const [video, tela] = await Promise.all([YT.search(String(c.valor || '')), YT.telaDisponivel()]);
+          if (!tela.online) {
+            // só a TV Samsung (SmartThings) dá para abrir o YouTube de longe; nas outras, a pessoa abre
+            if (tela.samsung && await ST.configured().catch(() => false)) { await ST.command({ acao: 'app', valor: 'youtube' }).catch(() => {}); await new Promise(r => setTimeout(r, 9000)); }
+            else if (tela.nome) { try { await YT.play(video.id); return res.json({ ok: true, video, tela: tela.nome }); } catch { throw new Error(`A ${tela.nome} não está com o YouTube aberto. Abra o YouTube nela e peça de novo.`); } }
+          }
           await YT.play(video.id);
-          return res.json({ ok: true, video });
+          return res.json({ ok: true, video, tela: tela.nome });
         }
+        if (c.alvo === 'tv' && c.acao === 'tela') return res.json({ ok: true, nome: await YT.escolher(c.valor) });
         if (c.alvo === 'tv' && c.acao === 'yt') {
           try { await YT.controle(c.valor); }
           catch (e) { if (!e.setup || !['pausar', 'continuar'].includes(c.valor)) throw e; await ST.command({ acao: c.valor === 'pausar' ? 'pause' : 'play' }); }

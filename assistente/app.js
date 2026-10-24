@@ -10,7 +10,8 @@ const LS = {
 };
 const S = {
   senha: LS.get('as_senha', ''), speak: LS.get('as_speak', true), conversa: LS.get('as_conversa', false),
-  apiUrl: LS.get('as_api', ''), aqui: null, senhaVercel: null, tv: false, ar: false, started: false, emptyListens: 0
+  apiUrl: LS.get('as_api', ''), aqui: null, senhaVercel: null, tv: false, ar: false, started: false, emptyListens: 0,
+  atento: LS.get('as_atento', true), ia: false, telas: [], telaAtiva: null, hist: [], musicaTV: null
 };
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
@@ -37,11 +38,12 @@ const Voz = {
   voice() { const vs = speechSynthesis.getVoices(); return vs.find(v => /pt[-_]BR/i.test(v.lang) && /google|luciana|francisca|daniel|felipe/i.test(v.name)) || vs.find(v => /pt[-_]BR/i.test(v.lang)) || vs.find(v => /^pt/i.test(v.lang)); },
   /** fala o texto; o balão mostra a frase e a boca do robô acompanha */
   say(text, { mood } = {}) {
+    Ouvido.pausar();
     $('#bubble').innerHTML = esc(text);
     log(text, 'bot', mood === 'sad');
     if (mood) Robot.mood(mood, mood === 'happy' || mood === 'sad' ? 4500 : 0);
     return new Promise(resolve => {
-      const done = () => { Robot.talk(false); resolve(); };
+      const done = () => { Robot.talk(false); if (!Voz.ouvindo) Ouvido.retomar(); resolve(); };
       if (!S.speak || !('speechSynthesis' in window)) { Robot.talk(true); setTimeout(done, Math.min(6000, 600 + text.split(' ').length * 260)); return; }
       try {
         speechSynthesis.cancel();
@@ -67,6 +69,7 @@ const Voz = {
     return new Promise(resolve => {
       if (!SR) { $('#heard').textContent = 'Este navegador não reconhece voz. Use o Chrome (Android) ou o Safari (iPhone), ou escreva.'; return resolve(''); }
       this.cancel(); // descarta uma escuta antiga ainda aberta
+      Ouvido.pausar();
       try { speechSynthesis.cancel(); } catch {}
       const rec = this.rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
       let final = '', interim = '';
@@ -74,7 +77,7 @@ const Voz = {
       rec._resolve = resolve;
       rec.onresult = e => { if (rec !== this.rec) return; interim = ''; for (const r of e.results) r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript); $('#heard').textContent = `“${final || interim}”`; };
       rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { $('#heard').textContent = 'Libere o microfone para este site nas configurações do navegador.'; S.conversa = false; syncConv(); } };
-      rec.onend = () => { if (rec !== this.rec) return; this.ouvindo = false; $('#mic').classList.remove('listening'); if (Robot.current === 'listening') Robot.mood('idle'); if (!final && !interim) $('#heard').textContent = ''; resolve((final || interim).trim()); };
+      rec.onend = () => { if (rec !== this.rec) return; this.ouvindo = false; Ouvido.retomar(); $('#mic').classList.remove('listening'); if (Robot.current === 'listening') Robot.mood('idle'); if (!final && !interim) $('#heard').textContent = ''; resolve((final || interim).trim()); };
       try { rec.start(); } catch { resolve(''); }
     });
   }
@@ -105,7 +108,7 @@ function papo(t) {
   if (/\b(tchau|ate mais|ate logo|pode parar|para de ouvir|chega|silencio|dormir)\b/.test(n)) { S.conversa = false; syncConv(); return { text: 'Tá bom! Quando precisar, é só tocar em mim.', mood: 'sleep', listen: false }; }
   if (/\b(oi|ola|e ai|eai|bom dia|boa tarde|boa noite|hey)\b/.test(n) && n.split(' ').length <= 4) return { text: `${/bom dia/.test(n) ? 'Bom dia' : /boa tarde/.test(n) ? 'Boa tarde' : /boa noite/.test(n) ? 'Boa noite' : 'Oi'}! Em que posso ajudar? Posso ligar a TV, o ar, ou te ajudar a me configurar.`, mood: 'happy' };
   if (/\b(obrigad|valeu|brigad)/.test(n)) return { text: 'De nada! Estou aqui para isso.', mood: 'happy' };
-  if (/\b(quem e voce|qual (e )?seu nome|como (voce )?se chama|voce e quem)\b/.test(n)) return { text: 'Eu sou o Robô, seu assistente pessoal. Eu controlo a sua TV e o seu ar-condicionado, e converso com você.', mood: 'happy' };
+  if (/\b(quem e voce|qual (e )?seu nome|como (voce )?se chama|voce e quem)\b/.test(n)) return { text: 'Eu sou o Hi Tec, seu robô assistente. Eu controlo a sua TV e o seu ar-condicionado, ponho música e converso com você. Para me chamar, diga Hi Tec ou bata palmas duas vezes.', mood: 'happy' };
   if (/\b(o que voce (faz|sabe)|ajuda|comandos|o que posso (falar|pedir))\b/.test(n) && !/configur/.test(n)) return { text: 'Na TV: liga a TV, volume 15, abre a Netflix, toca Evidências no YouTube, quero ouvir Djavan, pausa, próxima, e também pra baixo, direita, ok e voltar para navegar. No ar: liga o ar, ar em 22 graus, modo frio. Também te ajudo a me configurar.' };
   if (/\b(que horas|horas sao)\b/.test(n)) { const d = new Date(); return { text: `Agora são ${d.getHours()} horas e ${d.getMinutes()} minutos.` }; }
   if (/\b(piada|me faz rir|conta algo engracado)\b/.test(n)) return { text: PIADAS[Math.floor(Math.random() * PIADAS.length)], mood: 'happy' };
@@ -126,8 +129,16 @@ async function executar(c) {
   Robot.mood('thinking');
   try {
     if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); Robot.mood('idle'); return falar(descreve(c.alvo, estado)); }
-    if (c.acao === 'youtube') { Voz.say(`Procurando ${c.valor} no YouTube…`); const r = await api({ acao: 'cmd', cmd: c }); return falar(`Tocando ${r.video?.titulo || c.valor} na TV.`, { mood: 'happy' }); }
-    await api({ acao: 'cmd', cmd: c }); return falar(Comandos.reply(c), { mood: 'happy' });
+    if (c.acao === 'youtube') {
+      Voz.say(`Procurando ${c.valor} no YouTube…`);
+      const r = await api({ acao: 'cmd', cmd: c });
+      if (c.musica !== false) dancarComTV();
+      return falar(`Tocando ${r.video?.titulo || c.valor}${r.tela && S.telas.length > 1 ? ` na ${nomeTV(r.tela)}` : ' na TV'}.`, { mood: 'happy' });
+    }
+    if (c.acao === 'tela') { const r = await api({ acao: 'cmd', cmd: c }); S.telaAtiva = r.nome; return falar(`Pronto, agora estou usando a ${nomeTV(r.nome)}.`, { mood: 'happy' }); }
+    const r = await api({ acao: 'cmd', cmd: c });
+    if (c.acao === 'yt' && c.valor === 'pausar' || c.acao === 'desligar' || c.acao === 'yt' && c.valor === 'continuar') pararDancaTV(c.valor === 'continuar' ? 'continuar' : 'parar');
+    return falar(Comandos.reply(c), { mood: 'happy' });
   } catch (e) {
     Robot.mood('idle');
     if (e.setup === 'tv') return falar(`${e.message} Quer que eu te ajude a conectar a TV agora?`, { mood: 'sad', listen: true }).then(() => { pendente = 'tv1'; });
@@ -136,6 +147,62 @@ async function executar(c) {
     if (e.status === 401) return iniciarPasso('senha', 'Essa senha não está mais valendo.');
     return falar(e.message, { mood: 'sad' });
   }
+}
+
+const nomeTV = n => /\b(tv|televisao|televisão)\b/i.test(n || '') ? n : `TV ${n}`;
+/* ── inteligência (Gemini): conversa livre; pode devolver comandos para a TV e o ar ── */
+async function pensar(texto) {
+  Robot.mood('thinking');
+  try {
+    const r = await api({ acao: 'conversa', texto, historico: S.hist });
+    S.hist.push({ quem: 'eu', texto }, { quem: 'robo', texto: r.fala }); S.hist = S.hist.slice(-12);
+    const erros = [];
+    for (const c of r.comandos || []) {
+      try {
+        if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); r.fala = `${r.fala} ${descreve(c.alvo, estado)}`.trim(); continue; }
+        const res = await api({ acao: 'cmd', cmd: c });
+        if (c.acao === 'tela') S.telaAtiva = res.nome;
+        if (c.acao === 'youtube' && (r.musica || c.musica)) dancarComTV();
+        if (c.acao === 'yt' && c.valor === 'pausar' || c.acao === 'desligar') pararDancaTV('parar');
+      } catch (e) { erros.push(e.message); if (e.setup === 'youtube') pendente = 'yt1'; if (e.setup === 'tv') pendente = 'tv1'; }
+    }
+    Robot.mood('idle');
+    return falar(erros.length ? `${r.fala} Mas deu um problema: ${erros[0]}` : (r.fala || 'Feito!'), { mood: erros.length ? 'sad' : (r.musica ? 'happy' : undefined) });
+  } catch (e) {
+    Robot.mood('idle');
+    if (e.setup === 'ia') { S.ia = false; return falar('Minha inteligência não está ligada. Quer ligar agora? É de graça.', { listen: true }).then(() => { pendente = 'ia1'; }); }
+    const p = papo(texto); if (p) return falar(p.text, p);
+    return falar(e.message, { mood: 'sad' });
+  }
+}
+
+/* dança enquanto a TV toca música (pelo robô); para com pausa, desligar ou depois de um tempo */
+let dancaTimer = null;
+function dancarComTV() {
+  S.musicaTV = Date.now(); Robot.dance(true, 112);
+  clearTimeout(dancaTimer); dancaTimer = setTimeout(() => pararDancaTV('parar'), 4 * 60e3);
+}
+function pararDancaTV(modo) {
+  if (modo === 'continuar') { if (S.musicaTV) dancarComTV(); return; }
+  S.musicaTV = null; clearTimeout(dancaTimer); if (!Ouvido.musica) Robot.dance(false);
+}
+
+/* ── ouvido: duas palmas ou "Hi Tec" chamam o robô; música no ambiente faz ele dançar ── */
+async function acordar(como) {
+  if (passo?.field || Voz.ouvindo || document.body.classList.contains('locked')) return;
+  S.conversa = true; syncConv(); Robot.mood('happy', 1500);
+  await Voz.say(como === 'palmas' ? 'Oi! Ouvi as palmas. Pode falar.' : 'Oi! Estou ouvindo.');
+  ouvir();
+}
+Ouvido.on('palmas', () => acordar('palmas'));
+Ouvido.on('wake', () => acordar('nome'));
+Ouvido.on('musica', (on, bpm) => { if (on) Robot.dance(true, bpm); else if (!S.musicaTV) Robot.dance(false); });
+async function ligarOuvido(avisar = false) {
+  if (!S.atento || Ouvido.ativo || document.body.classList.contains('locked')) return;
+  const ok = await Ouvido.ligar();
+  $('#btn-ear').classList.toggle('active', ok);
+  if (!ok) { if (avisar) falar('Não consegui usar o microfone. Libere o microfone para este site nas configurações do navegador.', { mood: 'sad' }); return; }
+  $('#heard').textContent = 'Diga “Hi Tec” ou bata palmas duas vezes para me chamar.';
 }
 
 /* ── entrada: tudo que o usuário fala, digita ou toca passa por aqui ── */
@@ -153,17 +220,25 @@ async function responder(texto, viaBotao = false) {
   }
   if (pendente) { const p = pendente; pendente = null; if (SIM.test(n)) return iniciarPasso(p); if (NAO.test(n)) return falar('Tudo bem!'); }
   if (/\b(configur|me ajuda a (te )?configurar|conectar|instalar|primeiros passos|vincular|parear)\b/.test(n)) {
-    if (/\b(youtube|you tube)\b/.test(n)) return iniciarPasso(S.aqui ? 'yt1' : 'intro');
+    if (/\b(intelig|gemini|cerebro|mais esperto)/.test(n)) return iniciarPasso(S.aqui ? 'ia1' : 'intro');
+    if (/\b(youtube|you tube|outra tv|nova tv|mais uma tv|tv do|tv da|tv de)\b/.test(n)) return iniciarPasso(S.aqui ? 'yt1' : 'intro');
     if (/\b(tv|televisao)\b/.test(n)) return iniciarPasso(S.aqui ? 'tv1' : 'intro');
     if (/\bar\b/.test(n)) return iniciarPasso(S.aqui ? 'ar1' : 'intro');
     return iniciarPasso('intro');
   }
+  if (/\b(fica|ficar|ser|seja) mais intelig|liga(r)? (a|sua) intelig/.test(n)) return iniciarPasso(S.aqui ? 'ia1' : 'intro');
+  if (/^(danca|dance|dancar|danca pra mim|bora dancar|vamos dancar|mexe o esqueleto)\b/.test(n)) { Robot.dance(true, 118); setTimeout(() => { if (!S.musicaTV && !Ouvido.musica) Robot.dance(false); }, 15000); return falar('Solta o som! Olha eu dançando!', { mood: 'happy' }); }
+  if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
+  if (/\b(quais|que) tvs?\b|\btvs? (vinculadas|conectadas)\b/.test(n)) return falar(S.telas.length ? `Eu conheço ${S.telas.length === 1 ? 'a TV' : `${S.telas.length} TVs`}: ${S.telas.join(', ')}. Estou usando a ${S.telaAtiva}.` : 'Ainda não vinculei nenhuma TV pelo YouTube.');
   const c = Comandos.parse(texto);
   if (c?.erro) return falar(c.erro, { mood: 'sad' });
   if (c) return executar(c);
+  // fora os comandos diretos: com a inteligência ligada, o Gemini responde (e pode mandar comandos)
+  const especial = /\b(tchau|ate mais|modo conversa|fica ouvindo|para de ouvir|que horas)\b/.test(n);
+  if (S.ia && S.aqui && S.senha && !especial) return pensar(texto);
   const p = papo(texto);
   if (p) return falar(p.text, p);
-  return falar('Hmm, não entendi. Você pode dizer, por exemplo: liga a TV, ar em 22 graus, ou me ajuda a configurar.', { mood: 'sad' });
+  return falar(S.ia ? 'Hmm, não entendi.' : 'Hmm, não entendi. Você pode dizer, por exemplo: liga a TV, toca Evidências, ou me ajuda a configurar. Se quiser que eu entenda qualquer coisa, diga: fica mais inteligente.', { mood: 'sad' });
 }
 
 /* ═════════ CONFIGURAÇÃO GUIADA ═════════
@@ -182,17 +257,18 @@ async function proximoPasso() {
   const p = await ping(); S.senhaVercel = p?.senhaConfigurada;
   if (!p?.senhaConfigurada) return iniciarPasso('v-env');
   if (!S.senha) return iniciarPasso('senha');
-  try { const s = await api({ acao: 'status' }); S.tv = s.tv; S.ar = s.ar; S.youtube = s.youtube; atualizaAparelhos(); }
+  try { const s = await api({ acao: 'status' }); S.tv = s.tv; S.ar = s.ar; S.youtube = s.youtube; S.telas = s.telas || []; S.telaAtiva = s.telaAtiva; S.ia = !!s.ia; atualizaAparelhos(); }
   catch (e) { if (e.status === 401) return iniciarPasso('senha', 'A senha salva aqui não bate com a da Vercel.'); }
   if (!S.ar && !LS.get('as_pula_ar')) return iniciarPasso('ar1');
   if (!S.tv && !LS.get('as_pula_tv')) return iniciarPasso('tv1');
   if (S.tv && !S.youtube && !LS.get('as_pula_yt')) return iniciarPasso('yt1');
+  if (!S.ia && !LS.get('as_pula_ia')) return iniciarPasso('ia1');
   return iniciarPasso('fim');
 }
 
 const PASSOS = {
   entrar: {
-    say: () => 'Oi! Eu sou o Robô. Para começar, digite a minha senha.',
+    say: () => 'Oi! Eu sou o Hi Tec. Para começar, digite a minha senha.',
     field: { inputs: [{ id: 'senha', type: 'password', label: 'Senha do robô', autocomplete: 'current-password' }], submit: 'Entrar' },
     on: async (t, n, v) => {
       const s = (v?.senha || '').trim(); if (!s) return falar('Digite a senha no campo, por favor.');
@@ -201,14 +277,14 @@ const PASSOS = {
         const st = await statusComSenha(s);
         S.senha = s; LS.set('as_senha', s); destravar();
         const pronto = st.tv || st.ar || st.youtube;
-        if (pronto) { LS.set('as_configurado', true); encerrarPassos(); return falar('Senha certa! Bem-vindo de volta. Já lembro de tudo que você configurou. Pode falar.', { mood: 'happy' }); }
+        if (pronto) { LS.set('as_configurado', true); encerrarPassos(); ligarOuvido(); return falar('Senha certa! Bem-vindo de volta. Já lembro de tudo que você configurou. Para me chamar, diga Hi Tec ou bata palmas duas vezes.', { mood: 'happy' }); }
         await Voz.say('Senha certa!', { mood: 'happy' }); return proximoPasso();
       } catch (e) { return falar(e.status === 401 ? 'Senha errada. Tente de novo.' : e.message, { mood: 'sad' }); }
     }
   },
   intro: {
-    say: () => S.aqui ? 'Oi! Eu sou o Robô, seu assistente. Vou te ajudar a me configurar, passo a passo. Vamos começar?'
-      : 'Oi! Eu sou o Robô, seu assistente. Vou te ajudar a me configurar. São quatro etapas: meu servidor, a senha, o ar e a TV. Leva uns 20 minutos. Vamos começar?',
+    say: () => S.aqui ? 'Oi! Eu sou o Hi Tec, seu robô assistente. Vou te ajudar a me configurar, passo a passo. Vamos começar?'
+      : 'Oi! Eu sou o Hi Tec, seu robô assistente. Vou te ajudar a me configurar. São quatro etapas: meu servidor, a senha, o ar e a TV. Leva uns 20 minutos. Vamos começar?',
     choices: [{ label: 'Vamos lá!', value: 'sim', primary: true }, { label: 'Agora não', value: 'nao' }],
     on: (t, n) => NAO.test(n) ? (encerrarPassos(), falar('Sem problemas! Quando quiser, diga: me ajuda a configurar.')) : proximoPasso()
   },
@@ -377,8 +453,9 @@ const PASSOS = {
     }
   },
   yt1: {
-    say: 'Para eu escolher vídeos e músicas na TV, preciso me ligar ao YouTube dela. Na TV, abra o YouTube, vá em Configurações e depois em Vincular com código de TV. Vai aparecer um código de 12 números. Digite ele aqui.',
-    field: { inputs: [{ id: 'codigo', type: 'text', label: 'Código da TV (12 números)', placeholder: '000 000 000 000' }], submit: 'Vincular YouTube' },
+    say: () => S.telas.length ? `Vamos vincular mais uma TV. Pode ser de qualquer marca, até a de outra casa. Na TV, abra o YouTube, vá em Configurações e depois em Vincular com código de TV. Digite aqui o código de 12 números e um nome para ela, como quarto.`
+      : 'Para eu escolher vídeos e músicas na TV, preciso me ligar ao YouTube dela. Na TV, abra o YouTube, vá em Configurações e depois em Vincular com código de TV. Vai aparecer um código de 12 números. Digite ele aqui.',
+    field: { inputs: [{ id: 'codigo', type: 'text', label: 'Código da TV (12 números)', placeholder: '000 000 000 000' }, { id: 'apelido', type: 'text', label: 'Nome para essa TV (opcional)', placeholder: 'ex.: sala, quarto, casa da mãe' }], submit: 'Vincular' },
     choices: [{ label: 'Pular', value: 'pular' }, B.repete],
     on: async (t, n, v) => {
       if (/pula/.test(n)) { LS.set('as_pula_yt', true); return proximoPasso(); }
@@ -386,10 +463,23 @@ const PASSOS = {
       if (codigo.length < 10) return falar('O código tem 12 números. Ele aparece no YouTube da TV, em Configurações, Vincular com código de TV.', { mood: 'sad' });
       Robot.mood('thinking');
       try {
-        const r = await api({ acao: 'yt-pair', codigo }); S.youtube = true;
-        await Voz.say(`Pronto! Estou ligado ao YouTube da ${r.nome || 'TV'}. Agora você pode dizer, por exemplo: toca Evidências, ou quero ouvir Djavan.`, { mood: 'happy' });
+        const r = await api({ acao: 'yt-pair', codigo, apelido: v?.apelido || '' }); S.youtube = true;
+        S.telas = [...new Set([...S.telas, r.nome])]; S.telaAtiva = r.nome;
+        await Voz.say(`Pronto! Estou ligado ao YouTube da ${r.nome || 'TV'}.${S.telas.length > 1 ? ` Para trocar de TV, diga por exemplo: usar a TV ${S.telas[0]}.` : ' Agora você pode dizer, por exemplo: toca Evidências.'}`, { mood: 'happy' });
         return proximoPasso();
       } catch (e) { return falar(e.message, { mood: 'sad' }); }
+    }
+  },
+  ia1: {
+    say: 'Para eu ficar mais inteligente e entender qualquer coisa que você disser, preciso de uma chave grátis do Google Gemini. Toque em Abrir Google, entre com sua conta do Google, toque em Criar chave de API, copie e cole aqui.',
+    choices: [{ label: 'Abrir Google', href: 'https://aistudio.google.com/apikey', primary: true }, { label: 'Pular', value: 'pular' }, B.repete],
+    field: { inputs: [{ id: 'key', type: 'text', label: 'Chave do Gemini', placeholder: 'AIza…' }], submit: 'Ligar inteligência' }, volta: true,
+    on: async (t, n, v) => {
+      if (/pula/.test(n)) { LS.set('as_pula_ia', true); return proximoPasso(); }
+      const key = (v?.key || '').trim(); if (!key) return falar('Cole a chave no campo, por favor.');
+      Robot.mood('thinking'); await Voz.say('Testando a chave…');
+      try { await api({ acao: 'ia-setup', key }); S.ia = true; await Voz.say('Uau, agora estou bem mais esperto! Pode conversar comigo do jeito que quiser.', { mood: 'happy' }); return proximoPasso(); }
+      catch (e) { return falar(e.message, { mood: 'sad' }); }
     }
   },
   fim: {
@@ -451,7 +541,7 @@ async function statusComSenha(senha) {
   const res = await fetch('/api/assistente', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-senha': senha }, body: JSON.stringify({ acao: 'status' }) });
   const d = await res.json().catch(() => ({}));
   if (!res.ok || !d.ok) throw Object.assign(new Error(d.erro || `Erro ${res.status}`), { status: res.status });
-  S.tv = d.tv; S.ar = d.ar; S.youtube = d.youtube; atualizaAparelhos();
+  S.tv = d.tv; S.ar = d.ar; S.youtube = d.youtube; S.telas = d.telas || []; S.telaAtiva = d.telaAtiva || null; S.ia = !!d.ia; atualizaAparelhos();
   return d;
 }
 function travar() { document.body.classList.add('locked'); }
@@ -464,6 +554,7 @@ function syncConv() { LS.set('as_conversa', S.conversa); $('#btn-conv').classLis
 async function primeiroToque() {
   if (S.started) return false; S.started = true;
   await inicio.catch(() => {}); // espera conferir a senha salva antes de decidir o que fazer
+  ligarOuvido();
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} // libera a fala no iPhone (precisa de um toque)
   if (document.body.classList.contains('locked')) { iniciarPasso('entrar'); return true; }
   const voltando = LS.get('as_passo'), prefixo = LS.get('as_prefixo'); LS.set('as_prefixo', null);
@@ -482,6 +573,11 @@ $('#robot').onclick = async () => {
 $('#mic').onclick = async () => { if (await primeiroToque()) return; ouvir(); };
 $('#type-form').onsubmit = async e => { e.preventDefault(); Voz.cancel(); const v = $('#type').value; $('#type').value = ''; S.started = true; responder(v); };
 document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { S.started = true; responder(b.dataset.q); });
+$('#btn-ear').onclick = async () => {
+  S.started = true; S.atento = !Ouvido.ativo; LS.set('as_atento', S.atento);
+  if (S.atento) { await ligarOuvido(true); if (Ouvido.ativo) falar(Ouvido.ouveNome ? 'Estou atento! Diga Hi Tec ou bata palmas duas vezes para me chamar. Se tocar música, eu danço.' : 'Estou atento! Bata palmas duas vezes para me chamar. Se tocar música, eu danço.', { mood: 'happy' }); }
+  else { Ouvido.desligar(); $('#btn-ear').classList.remove('active'); Robot.dance(false); falar('Parei de prestar atenção. Toque em mim quando precisar.'); }
+};
 $('#btn-conv').onclick = () => { S.conversa = !S.conversa; syncConv(); S.started = true; falar(S.conversa ? 'Modo conversa ligado! Pode falar.' : 'Modo conversa desligado.', { mood: S.conversa ? 'happy' : 'idle' }); };
 $('#btn-cfg').onclick = () => { $('#senha').value = S.senha; $('#speak').checked = S.speak; $('#autolisten').checked = S.conversa; $('#cfg').showModal(); };
 $('#cfg').addEventListener('click', e => { if (e.target === $('#cfg') || e.target.closest('[data-close]')) $('#cfg').close(); });
