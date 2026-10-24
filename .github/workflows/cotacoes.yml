@@ -1,0 +1,33 @@
+name: Cotações B3 (brapi)
+
+on:
+  schedule:
+    # a cada 30 min, de segunda a sexta, das 10h às 18h30 (horário de Brasília = UTC-3)
+    - cron: '7,37 13-21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Tickers para testar (ex.: PETR4 VALE3). Vazio = carteira completa'
+        required: false
+  push:
+    branches: [main]
+    paths: ['.github/scripts/brapi-sync.mjs', '.github/workflows/cotacoes.yml']
+
+concurrency:
+  group: cotacoes
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Buscar cotações e gravar no Firebase
+        env:
+          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+          FORCE: ${{ github.event_name != 'schedule' }}
+        run: node .github/scripts/brapi-sync.mjs ${{ github.event_name == 'push' && 'PETR4 VALE3' || inputs.tickers }}

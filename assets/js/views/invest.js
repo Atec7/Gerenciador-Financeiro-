@@ -23,8 +23,9 @@ Views.invest = {
     const perm = window.Notification?.permission;
     const notes = [
       perm !== 'granted' ? `<div class="notice">${icon('bell')}<span>Ative as notificações para receber os alertas com som, mesmo com o app em segundo plano.</span><button class="btn sm primary" data-iv="perm">Ativar</button></div>` : '',
-      !Market.token() ? `<div class="notice">${icon('info')}<span>Sem chave da brapi.dev, só dá para ver PETR4, VALE3, MGLU3 e ITUB4. A chave é grátis.</span><button class="btn sm" data-iv="cfg">Configurar</button></div>` : '',
-      Market.error ? `<div class="notice err">${icon('alert')}<span>${esc(Market.error)}</span></div>` : ''
+      !M.status ? `<div class="notice">${icon('info')}<span>As cotações chegam pela sincronização automática (a cada 30 min no horário do pregão). Ainda não houve nenhuma.</span></div>` : '',
+      Market.sandbox() ? `<div class="notice">${icon('info')}<span>Sincronizando só PETR4, VALE3, MGLU3 e ITUB4. Para todas as ações, adicione o segredo <b>BRAPI_TOKEN</b> no GitHub.</span></div>` : '',
+      Market.error ? `<div class="notice err">${icon('alert')}<span>Última sincronização falhou: ${esc(Market.error)}</span></div>` : ''
     ].join('');
     return `
       <div class="page-head" style="margin-top:22px">
@@ -35,16 +36,16 @@ Views.invest = {
       ${notes}
       <div class="grid-2" style="align-items:start">
         <div class="card flush">
-          <div class="card-head"><h3>⭐ Radar do dia</h3><button class="btn sm" data-iv="radar" ${Market.busy ? 'disabled' : ''}>${icon('refresh', 'i-sm')} Atualizar</button></div>
+          <div class="card-head"><h3>⭐ Radar do dia</h3></div>
           ${radar?.items?.length ? `<div class="list">${radar.items.map((x, i) => `
             <div class="item" data-watch="${esc(x.t)}">
               ${tickerAvatar(x.t, x.logo)}
               <div class="item-body"><div class="item-title">${i + 1}. ${esc(x.t)} <span class="faint" style="font-weight:400">${esc(x.name || '')}</span></div>
-                <div class="item-sub">P/L ${fmtNum(x.pl, 1)} · ${fmtNum(x.desc * 100, 0)}% abaixo da máxima de 52 sem.</div></div>
+                <div class="item-sub">${x.pl ? `P/L ${fmtNum(x.pl, 1)} · ` : ''}${fmtNum(x.desc * 100, 0)}% abaixo da máxima de 52 sem.</div></div>
               <div class="item-end"><span class="item-amount">${money(x.price)}</span>${chgTag(x.chg)}</div>
             </div>`).join('')}</div>
-            <p class="faint radar-note">Entre ${radar.n} grandes empresas da B3: P/L baixo e preço abaixo da máxima de 52 semanas. Critério automático, não é recomendação de investimento. Atualizado em ${fmtDate(radar.day)} às ${hhmm(radar.at)}.</p>`
-          : `<p class="muted" style="padding:14px 16px">${Market.busy ? 'Buscando cotações…' : 'O radar aparece todo dia útil a partir das 11h. Toque em Atualizar para ver agora.'}</p>`}
+            <p class="faint radar-note">Entre ${radar.n} grandes empresas da B3: ${radar.crit === 'pl+desconto' ? 'P/L baixo e preço abaixo' : 'as mais abaixo'} da máxima de 52 semanas.${radar.crit === 'pl+desconto' ? '' : ' (O P/L exige um plano pago da brapi.)'} Critério automático, não é recomendação de investimento. Atualizado em ${fmtDate(radar.day)} às ${hhmm(radar.at)}.</p>`
+          : `<p class="muted" style="padding:14px 16px">O radar é montado todo dia útil, a partir das 10h30, na sincronização automática.</p>`}
         </div>
         <div>
           <div class="card flush">
@@ -134,11 +135,6 @@ Views.invest = {
       if (a === 'watch') return this.watchForm();
       if (a === 'test') return Alerts.test();
       if (a === 'perm') { await App.enableNotifications(); return this.render(el); }
-      if (a === 'radar') {
-        Market.busy = true; this.render(el);
-        try { await Market.radar(); const { tickers } = Alerts.watched(); if (tickers.length) await Market.refresh(tickers); } catch (err) { Market.error = err.message; }
-        Market.busy = false; return this.render(el);
-      }
       const w = e.target.closest('[data-watch]');
       if (w) return this.watchForm(w.dataset.watch);
       const it = e.target.closest('[data-inv]');
@@ -243,7 +239,7 @@ Views.invest = {
         const ticker = mk ? $('#if-tk', el).value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || null : null, qtd = mk ? parseMoney($('#if-q', el).value) || null : null;
         if (ticker && !/^[A-Z]{4}\d{1,2}F?$/.test(ticker)) return toast('Código inválido (ex.: PETR4, MXRF11)', 'err');
         const data = { nome, tipo, instituicao: $('#if-i', el).value.trim() || null, taxa: $('#if-x', el).value.trim() || null, obs: $('#if-o', el).value.trim() || null, ticker, qtd };
-        if (ticker) setTimeout(() => Market.refresh([ticker]).then(() => Bus.emit('data', 'market')).catch(() => {}), 300);
+        if (ticker && !Market.quote(ticker)) setTimeout(() => toast('A cotação aparece na próxima sincronização (até 30 min no pregão)', 'info'), 600);
         if (inv) { await Store.update(`Investimentos/${inv._key}`, data); Sheet.close(); return toast('Investimento atualizado'); }
         const v = parseMoney($('#if-v', el).value), date = $('#if-d', el).value || today(), id = Store.newKey();
         const node = { ...data, criado: date, movs: {} }, upd = {};
@@ -332,18 +328,15 @@ Views.invest = {
         ${sw('ac-inv', 'Rendimento da renda fixa e Selic', 'Quanto seus investimentos renderam e mudanças da Selic', 'invest')}
         <div class="field mt"><label for="ac-mv">Avisar quando uma ação variar a partir de</label>
           <select id="ac-mv">${[2, 3, 5, 8, 10].map(v => `<option value="${v}" ${Alerts.move() === v ? 'selected' : ''}>${v}% no dia</option>`).join('')}</select></div>
-        <div class="field"><label for="ac-tk">Chave da brapi.dev (grátis)</label><input id="ac-tk" value="${esc(c.token || '')}" placeholder="Cole aqui a sua chave" autocomplete="off" spellcheck="false">
-          <span class="hint">Crie em <a href="https://brapi.dev/dashboard" target="_blank" rel="noopener">brapi.dev/dashboard</a> (sem cartão). Sem chave, só PETR4, VALE3, MGLU3 e ITUB4.</span></div>
-        <p class="faint" style="font-size:12px;margin-top:10px">Os alertas são verificados a cada 30 min com o app aberto. No Android, com o app instalado, o sistema também verifica em segundo plano de tempos em tempos.</p>`,
+        <div class="result mt"><div class="row"><span class="muted">Cotações (brapi.dev)</span><b>${(() => { const st = Market.load().status; return !st ? 'aguardando 1ª sincronização' : !st.ok ? 'erro na última' : `${st.mode === 'sandbox' ? 'modo teste · ' : ''}${fmtDateShort(st.at.slice(0, 10))} ${new Date(st.at).toTimeString().slice(0, 5)}`; })()}</b></div>
+          <div class="faint" style="font-size:12px">A chave da brapi fica guardada só no GitHub (segredo BRAPI_TOKEN), nunca no app. As cotações são atualizadas a cada 30 min no horário do pregão.</div></div>`,
       foot: `${perm === 'granted' ? '<button class="btn" data-ac="test">Testar</button>' : '<button class="btn" data-ac="perm">Ativar notificações</button>'}<button class="btn primary" data-ac="save">Salvar</button>`,
       onMount: el => el.querySelector('.sheet-foot').onclick = async e => {
         const a = e.target.closest('[data-ac]')?.dataset.ac; if (!a) return;
         if (a === 'test') { Chime.unlock(); Voice.unlock(); return Alerts.test(); }
         if (a === 'perm') { await App.enableNotifications(); return this.alertsCfg(); }
-        const patch = { sound: $('#ac-sound', el).checked, voice: $('#ac-voice', el).checked, stocks: $('#ac-stocks', el).checked, radar: $('#ac-radar', el).checked, invest: $('#ac-inv', el).checked, move: +$('#ac-mv', el).value, token: $('#ac-tk', el).value.trim() || null };
-        const tokenChanged = (patch.token || '') !== (c.token || '');
+        const patch = { sound: $('#ac-sound', el).checked, voice: $('#ac-voice', el).checked, stocks: $('#ac-stocks', el).checked, radar: $('#ac-radar', el).checked, invest: $('#ac-inv', el).checked, move: +$('#ac-mv', el).value, token: null };
         await Alerts.saveCfg(patch); Sheet.close(); toast('Alertas salvos');
-        if (tokenChanged) { Market.error = null; Alerts.run(true); }
       }
     });
   },
@@ -377,8 +370,8 @@ Views.invest = {
         await Store.update('config/alerts/watch', { [tk]: item });
         DB.alerts = { ...(DB.alerts || {}), watch: { ...(DB.alerts?.watch || {}), [tk]: item } };
         Sheet.close(); toast(`Acompanhando ${tk}`);
-        if (!Market.allowed(tk)) toast('Configure a chave da brapi para ver a cotação desta ação', 'info');
-        else Market.refresh([tk]).then(() => Bus.emit('data', 'market')).catch(err => { Market.error = err.message; Bus.emit('data', 'market'); });
+        if (!Market.allowed(tk)) toast('Para esta ação, adicione o segredo BRAPI_TOKEN no GitHub', 'info');
+        else if (!Market.quote(tk)) toast('A cotação aparece na próxima sincronização (até 30 min no pregão)', 'info');
       }
     });
   },

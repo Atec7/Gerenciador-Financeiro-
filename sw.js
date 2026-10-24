@@ -1,7 +1,7 @@
 /* Service worker do Fin: abre offline e instala como app.
    Arquivos do app: rede primeiro (sempre a versão mais nova), cache como reserva.
    Bibliotecas de CDN: cache primeiro (são versionadas). */
-const VERSION = 'fin-v2.5.0';
+const VERSION = 'fin-v2.6.0';
 const APP_FILES = [
   './', './index.html', './manifest.webmanifest',
   './assets/css/app.css',
@@ -64,10 +64,12 @@ async function bgAlerts() {
   const now = new Date(), h = now.getHours() + now.getMinutes() / 60, dw = now.getDay();
   if (dw === 0 || dw === 6 || h < 10 || h > 18.6) return;
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const url = `https://brapi.dev/api/quote/${cfg.items.map(i => i.t).join(',')}${cfg.token ? `?token=${encodeURIComponent(cfg.token)}` : ''}`;
-  const res = await fetch(url).catch(() => null);
+  // cotações gravadas pelo job do GitHub (brapi v2) no Firebase — o app não usa chave da brapi
+  if (!cfg.db) return;
+  const res = await fetch(`${cfg.db.replace(/\/$/, '')}/mercado/cotacoes.json`).catch(() => null);
   if (!res?.ok) return;
-  const data = await res.json().catch(() => ({}));
+  const cot = (await res.json().catch(() => null)) || {};
+  const data = { results: Object.entries(cot).map(([t, q]) => ({ symbol: t, regularMarketPrice: q?.price, regularMarketChangePercent: q?.chg })) };
   const brl = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
   const pct = v => Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const move = cfg.move || 3, done = cfg.done || {}, shows = [];

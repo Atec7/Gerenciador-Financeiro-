@@ -347,6 +347,8 @@ function startData() {
     DB.loaded.invest = true;
     Bus.emit('data', 'invest');
   });
+  // cotações da B3 gravadas pelo job do GitHub Actions (brapi v2) — nó global, sem chave no app
+  Store.on('/mercado', val => { DB.mercado = val || {}; Bus.emit('data', 'market'); });
   // lista de usuários (para o administrador gerenciar)
   if (Auth.isAdmin()) Store.on('/config/users', val => { LS.set('fin_users', val || {}); Bus.emit('data', 'users'); }, { cache: false });
   Store.on('Metas', val => {
