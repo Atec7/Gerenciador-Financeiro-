@@ -10,15 +10,19 @@ const Ouvido = (() => {
   let piso = 0.01, ultimoPico = 0, palmas = [], hist = [], onsetHist = [], prevE = 0, musica = false, silencioDesde = 0, musicaDesde = 0;
   const HZ = 50; // amostras por segundo
 
-  async function ligar() {
-    if (st.ativo) return true;
-    try {
-      st.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    } catch { return false; }
-    st.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  async function abrirMic() {
+    st.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    st.ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (st.ctx.state === 'suspended') try { await st.ctx.resume(); } catch {}
     const src = st.ctx.createMediaStreamSource(st.stream);
     st.an = st.ctx.createAnalyser(); st.an.fftSize = 1024; st.an.smoothingTimeConstant = 0;
     src.connect(st.an);
+  }
+  /** solta o microfone de verdade (no celular, o reconhecimento de voz só funciona com o microfone livre) */
+  function fecharMic() { try { st.stream?.getTracks().forEach(t => t.stop()); } catch {} st.stream = null; st.an = null; }
+  async function ligar() {
+    if (st.ativo) return true;
+    try { await abrirMic(); } catch { return false; }
     st.ativo = true; st.pausado = false;
     st.timer = setInterval(analisar, 1000 / HZ);
     iniciarWake(); manterTelaAcesa();
@@ -32,8 +36,18 @@ const Ouvido = (() => {
     if (musica) { musica = false; cb.musica(false); }
   }
   /** enquanto o robô fala ou escuta uma frase, o ouvido "tampa" (evita ouvir a si mesmo) */
-  function pausar() { st.pausado = true; pararWake(); }
-  function retomar() { if (!st.ativo) return; st.pausado = false; palmas = []; setTimeout(iniciarWake, 400); }
+  let retomarTimer = null;
+  function pausar() { clearTimeout(retomarTimer); st.pausado = true; pararWake(); fecharMic(); }
+  function retomar() {
+    if (!st.ativo) return;
+    clearTimeout(retomarTimer);
+    retomarTimer = setTimeout(async () => {
+      if (!st.ativo || !st.pausado) return;
+      try { if (!st.stream) await abrirMic(); } catch { return; }
+      st.pausado = false; palmas = []; candidata = null; hist = []; onsetHist = [];
+      setTimeout(iniciarWake, 400);
+    }, 700);
+  }
 
   const tdBuf = new Float32Array(1024), fBuf = new Uint8Array(512);
   function analisar() {
@@ -128,7 +142,7 @@ const Ouvido = (() => {
   return {
     ligar, desligar, pausar, retomar,
     on(ev, f) { cb[ev] = f; },
-    get ativo() { return st.ativo; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk && !st.wakeConflito; }, get musica() { return musica; },
+    get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk && !st.wakeConflito; }, get musica() { return musica; },
     _sim: { palmas: () => cb.palmas(), wake: () => cb.wake('hi tec'), musica: (on, bpm) => cb.musica(on, bpm) } // para testes
   };
 })();

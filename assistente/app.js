@@ -65,23 +65,45 @@ const Voz = {
     r._resolve?.('');
   },
   /** ouve uma frase; devolve o texto (ou '' se não ouviu nada) */
-  listen() {
-    return new Promise(resolve => {
-      if (!SR) { $('#heard').textContent = 'Este navegador não reconhece voz. Use o Chrome (Android) ou o Safari (iPhone), ou escreva.'; return resolve(''); }
+  listen(tentativa = 0) {
+    return new Promise(async resolve => {
+      if (!SR) { aviso('Este navegador não reconhece voz. Use o Chrome (Android) ou o Safari (iPhone), ou escreva o comando.'); return resolve(''); }
       this.cancel(); // descarta uma escuta antiga ainda aberta
-      Ouvido.pausar();
+      const estavaAtento = Ouvido.ativo && !Ouvido.pausado;
+      Ouvido.pausar(); // solta o microfone para o reconhecimento de voz
       try { speechSynthesis.cancel(); } catch {}
+      if (estavaAtento) await wait(350); // o celular leva um instante para liberar o microfone
       const rec = this.rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
       let final = '', interim = '';
       rec.onstart = () => { this.ouvindo = true; Robot.mood('listening'); $('#mic').classList.add('listening'); $('#heard').textContent = 'Estou ouvindo…'; };
       rec._resolve = resolve;
       rec.onresult = e => { if (rec !== this.rec) return; interim = ''; for (const r of e.results) r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript); $('#heard').textContent = `“${final || interim}”`; };
-      rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { $('#heard').textContent = 'Libere o microfone para este site nas configurações do navegador.'; S.conversa = false; syncConv(); } };
-      rec.onend = () => { if (rec !== this.rec) return; this.ouvindo = false; Ouvido.retomar(); $('#mic').classList.remove('listening'); if (Robot.current === 'listening') Robot.mood('idle'); if (!final && !interim) $('#heard').textContent = ''; resolve((final || interim).trim()); };
-      try { rec.start(); } catch { resolve(''); }
+      rec.onerror = e => {
+        rec._erro = e.error;
+        const msg = {
+          'not-allowed': 'O microfone está bloqueado para este site. Libere nas configurações do navegador (cadeado ao lado do endereço) e tente de novo.',
+          'service-not-allowed': 'O reconhecimento de voz está desativado neste aparelho. No Android, confira se o app Google está atualizado; no iPhone, ative a Siri e o Ditado.',
+          'audio-capture': 'Não consegui pegar o microfone. Feche outros apps que estejam usando o microfone e tente de novo.',
+          'network': 'O reconhecimento de voz precisa de internet e falhou agora. Tente de novo.',
+          'language-not-supported': 'Este aparelho não reconhece português na voz. Escreva o comando.'
+        }[e.error];
+        if (msg) { aviso(msg); S.conversa = false; syncConv(); }
+      };
+      rec.onend = async () => {
+        if (rec !== this.rec) return; this.ouvindo = false; $('#mic').classList.remove('listening'); if (Robot.current === 'listening') Robot.mood('idle');
+        // microfone ainda preso: espera mais um pouco e tenta de novo uma vez
+        if (rec._erro === 'audio-capture' && tentativa === 0) { await wait(800); return resolve(await this.listen(1)); }
+        Ouvido.retomar();
+        if (!final && !interim && !rec._erro) $('#heard').textContent = '';
+        resolve((final || interim).trim());
+      };
+      try { rec.start(); } catch (e) { aviso(`Não consegui começar a ouvir (${e.message}). Toque em mim de novo.`); Ouvido.retomar(); resolve(''); }
     });
   }
 };
+
+/** mostra um aviso claro na tela (balão + linha de status) */
+function aviso(msg) { $('#heard').textContent = msg; log(msg, 'bot', true); }
 
 /* ── conversa ── */
 function log(text, who = 'bot', err = false) {
