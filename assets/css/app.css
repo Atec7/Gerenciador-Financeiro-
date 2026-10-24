@@ -508,3 +508,29 @@ input[type=range]{width:100%;accent-color:var(--primary-2)}
   .toolbar .month-nav{justify-content:space-between}
   .toolbar select.input{flex:1 1 0;min-width:0;width:auto!important;max-width:none!important}
 }
+
+/* ── Ações e alertas ── */
+.notice{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);font-size:13px}
+.notice>.i{flex-shrink:0;color:var(--primary)}
+.notice span{flex:1}
+.notice.err>.i{color:var(--danger)}
+button.link{color:var(--primary);font-weight:600}
+.avatar.tk{position:relative;overflow:hidden;font-size:9.5px;font-weight:700;letter-spacing:-.02em;color:var(--text);background:var(--surface-2)}
+.avatar.tk img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;padding:3px}
+.avatar.al.up{color:#15803d}.avatar.al.down{color:#b91c1c}.avatar.al.star{color:#a16207}
+.radar-note{font-size:11.5px;padding:10px 16px 14px;border-top:1px solid var(--border)}
+#alert-cards{position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:8px;width:min(420px,calc(100% - 24px));pointer-events:none}
+.alert-card{pointer-events:auto;cursor:pointer;display:flex;align-items:flex-start;gap:12px;padding:12px 12px 12px 14px;border-radius:14px;background:rgba(255,255,255,.92);color:#101828;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 12px 32px rgba(16,24,40,.22),0 0 0 1px rgba(16,24,40,.06);animation:acIn .45s cubic-bezier(.2,1.2,.4,1)}
+:root[data-theme="dark"] .alert-card{background:rgba(31,39,55,.92);color:#e6e9ef;box-shadow:0 12px 32px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.08)}
+.alert-card .ac-icon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;color:#fff;background:linear-gradient(135deg,#2563eb,#1d4ed8)}
+.alert-card.up .ac-icon{background:linear-gradient(135deg,#22c55e,#15803d)}
+.alert-card.down .ac-icon{background:linear-gradient(135deg,#f87171,#b91c1c)}
+.alert-card.star .ac-icon{background:linear-gradient(135deg,#fbbf24,#d97706)}
+.alert-card .ac-icon .i{width:20px;height:20px}
+.alert-card .ac-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.alert-card .ac-body b{font-size:14px;font-weight:600}
+.alert-card .ac-body span{font-size:13px;opacity:.8;line-height:1.35}
+.alert-card .ac-x{opacity:.5;padding:2px}
+.alert-card.out{opacity:0;transform:translateY(-12px);transition:opacity .35s,transform .35s}
+@keyframes acIn{from{opacity:0;transform:translateY(-24px) scale(.96)}to{opacity:1;transform:none}}

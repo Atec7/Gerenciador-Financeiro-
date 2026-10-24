@@ -146,7 +146,8 @@ Views.settings = {
         <div class="card flush settings-list">
           ${row('', 'Instalar no celular / computador', standalone ? 'Já instalado' : ios ? 'No Safari: Compartilhar › Adicionar à Tela de Início' : App.installEvt ? 'Abre como app, com ícone e em tela cheia' : 'Use o menu do navegador › Instalar app',
               standalone || ios || !App.installEvt ? '' : `<button class="btn sm primary" data-s="install">Instalar</button>`)}
-          ${row('', 'Notificações', `${notif} · avisos de contas e lembretes`, window.Notification?.permission === 'granted' ? `<button class="btn sm" data-s="test-notif">Testar</button>` : `<button class="btn sm" data-s="notif">Ativar</button>`)}
+          ${row('', 'Notificações', `${notif} · avisos de contas, lembretes e investimentos`, window.Notification?.permission === 'granted' ? `<button class="btn sm" data-s="test-notif">Testar</button>` : `<button class="btn sm" data-s="notif">Ativar</button>`)}
+          ${row('', 'Alertas de investimentos', 'Ações, radar diário, rendimento e Selic · com som', `<button class="btn sm" data-s="alerts">Ajustar</button>`)}
           ${row('', 'Atalhos de teclado', '<span class="kbd">N</span> nova transação · <span class="kbd">/</span> buscar · <span class="kbd">H</span> ocultar valores · <span class="kbd">←</span><span class="kbd">→</span> mês', '')}
         </div>
 
@@ -172,7 +173,8 @@ Views.settings = {
       if (a === 'restore') Backup.restore();
       if (a === 'install') { App.installEvt?.prompt(); App.installEvt = null; }
       if (a === 'notif') App.enableNotifications().then(() => this.render(el));
-      if (a === 'test-notif') App.notify('Fin', 'Notificações funcionando corretamente.');
+      if (a === 'test-notif') { Chime.play('up'); App.notify('Fin', 'Notificações funcionando corretamente.'); }
+      if (a === 'alerts') Views.invest.alertsCfg();
       if (a === 'wipe') {
         if (!(await confirmDialog(`Apagar TODAS as ${DB.tx.length} transações? Esta ação não pode ser desfeita.`, { title: 'Apagar tudo', ok: 'Continuar', danger: true }))) return;
         if (!(await confirmDialog('Tem certeza absoluta? Recomendo baixar um backup antes.', { title: 'Última confirmação', ok: 'Apagar tudo', danger: true }))) return;

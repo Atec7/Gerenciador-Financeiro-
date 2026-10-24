@@ -67,6 +67,7 @@ const App = {
     Store.prefix = Auth.prefix();
     this.renderNav();
     startData();
+    Alerts.start();
     // conta removida/bloqueada pelo administrador: encerra a sessão
     const acc = Auth.current();
     if (acc.id !== 'main') Auth.refresh().then(() => { const u = Auth.users()[acc.id]; if (!u || u.bloqueado) { Auth.logout(); location.reload(); } }).catch(() => {});
@@ -235,11 +236,12 @@ const App = {
     const p = await Notification.requestPermission();
     Settings.set('notify', p === 'granted');
     toast(p === 'granted' ? 'Notificações ativadas' : 'Permissão negada', p === 'granted' ? 'ok' : 'err');
-    if (p === 'granted') { LS.del('fin_bills_day'); this.checkBills(); }
+    if (p === 'granted') { LS.del('fin_bills_day'); this.checkBills(); Alerts.registerBg(); }
   },
-  async notify(title, body, tag) {
+  async notify(title, body, tag, extra = {}) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const opts = { body, tag, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/icon-192.png' };
+    const opts = { body, tag, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/icon-192.png', ...extra };
+    if (!tag) delete opts.renotify;
     try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) return reg.showNotification(title, opts); } catch {}
     try { new Notification(title, opts); } catch {}
   },

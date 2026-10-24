@@ -136,6 +136,7 @@ const Rentab = {
 
   label(r) {
     if (!r) return 'Sem cálculo automático';
+    if (r.kind === 'mercado') return `Cotação B3 · ${r.pos.ticker} · ${fmtNum(r.pos.qtd, r.pos.qtd % 1 ? 2 : 0)} × ${fmt(r.pos.price)}`;
     const p = v => { const x = Math.round(v * 10000) / 100; return fmtNum(x, Number.isInteger(x) ? 0 : 2); };
     switch (r.kind) {
       case 'cdi': case 'selic': {
@@ -150,7 +151,7 @@ const Rentab = {
 
   /** rentabilidade anual equivalente hoje */
   annualNow(r) {
-    if (!r) return null;
+    if (!r || r.kind === 'mercado') return null;
     if (r.kind === 'cdi' || r.kind === 'selic') {
       const d = Rates.daily(r.kind, '9999-12-31');
       return Math.pow((1 + d * r.pct) * Math.pow(1 + (r.spread || 0), 1 / 252), 252) - 1;

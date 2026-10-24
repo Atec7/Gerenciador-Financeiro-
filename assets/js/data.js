@@ -8,7 +8,7 @@
 
 const DB = {
   tx: [], notes: [], goals: [], vault: [], invest: [],
-  budgets: {}, cats: {}, loaded: { tx: false },
+  budgets: {}, cats: {}, alerts: {}, loaded: { tx: false, invest: false },
   descIndex: new Map()
 };
 
@@ -187,11 +187,12 @@ const Invest = {
     const movs = Object.entries(inv.movs || {}).map(([k, m]) => ({ ...m, _key: k }))
       .sort((a, b) => (b.data || '').localeCompare(a.data || '') || (b.em || '').localeCompare(a.em || ''));
     const aplicado = sum(movs, m => m.valor);
-    const hoje = today(), rule = Rentab.rule(inv);
+    const hoje = today(), pos = Market.position(inv), rule = pos ? { kind: 'mercado', pos } : Rentab.rule(inv);
     const anchor = inv.saldoAtual != null ? { valor: Number(inv.saldoAtual), data: (inv.saldoEm || '').slice(0, 10) || hoje } : null;
     const after = anchor ? movs.filter(m => (m.em || '') > (inv.saldoEm || '')) : movs;
     let saldo, auto = false;
-    if (rule) {
+    if (pos) { saldo = pos.valor; auto = true; }
+    else if (rule) {
       const chunks = (anchor ? [anchor] : []).concat(after.map(m => ({ valor: m.valor, data: [m.data || hoje, anchor?.data || ''].sort()[1] })));
       const first = chunks.map(c => c.data).sort()[0];
       if (first && first < hoje) Rates.need(first);
@@ -343,6 +344,7 @@ function startData() {
   });
   Store.on('Investimentos', val => {
     DB.invest = val ? Object.entries(val).map(([k, v]) => ({ ...v, _key: k })) : [];
+    DB.loaded.invest = true;
     Bus.emit('data', 'invest');
   });
   // lista de usuários (para o administrador gerenciar)
@@ -354,6 +356,7 @@ function startData() {
   Store.on('config', (val, fromCache) => {
     val = val || {};
     DB.budgets = val.budgets || {};
+    DB.alerts = val.alerts || {};
     DB.cats = buildCategories(val.categories);
     if (!Store.prefix && val.auth?.hash) LS.set('fin_auth', val.auth);
     // migra as categorias para a nuvem na primeira vez
