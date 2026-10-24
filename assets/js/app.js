@@ -239,8 +239,11 @@ const App = {
     if (p === 'granted') { LS.del('fin_bills_day'); this.checkBills(); Alerts.registerBg(); }
   },
   async notify(title, body, tag, extra = {}) {
+    // som + leitura em voz alta (com o app aberto), mesmo sem permissão de notificação
+    const { kind = 'info', ...rest } = extra;
+    Chime.play(kind); Voice.say(title, body);
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const opts = { body, tag, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/icon-192.png', ...extra };
+    const opts = { body, tag, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/icon-192.png', ...rest };
     if (!tag) delete opts.renotify;
     try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) return reg.showNotification(title, opts); } catch {}
     try { new Notification(title, opts); } catch {}

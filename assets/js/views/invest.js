@@ -326,6 +326,7 @@ Views.invest = {
         <div class="result" style="margin-bottom:14px"><div class="row"><span class="muted">Notificações</span><b>${perm === 'granted' ? 'Ativadas' : perm === 'denied' ? 'Bloqueadas no navegador' : 'Desativadas'}</b></div>
           ${perm === 'denied' ? '<div class="faint" style="font-size:12px">Libere nas configurações do navegador/celular para este site.</div>' : ''}</div>
         ${sw('ac-sound', 'Tocar som', 'Um “ding” quando chegar um alerta', 'sound')}
+        ${sw('ac-voice', 'Falar o alerta', 'Lê em voz alta do que se trata (com o app aberto)', 'voice')}
         ${sw('ac-stocks', 'Ações que tenho e acompanho', 'Variação forte no dia e preço-alvo', 'stocks')}
         ${sw('ac-radar', 'Radar diário de ações', 'Um aviso por dia útil com os destaques', 'radar')}
         ${sw('ac-inv', 'Rendimento da renda fixa e Selic', 'Quanto seus investimentos renderam e mudanças da Selic', 'invest')}
@@ -337,9 +338,9 @@ Views.invest = {
       foot: `${perm === 'granted' ? '<button class="btn" data-ac="test">Testar</button>' : '<button class="btn" data-ac="perm">Ativar notificações</button>'}<button class="btn primary" data-ac="save">Salvar</button>`,
       onMount: el => el.querySelector('.sheet-foot').onclick = async e => {
         const a = e.target.closest('[data-ac]')?.dataset.ac; if (!a) return;
-        if (a === 'test') { Chime.unlock(); return Alerts.test(); }
+        if (a === 'test') { Chime.unlock(); Voice.unlock(); return Alerts.test(); }
         if (a === 'perm') { await App.enableNotifications(); return this.alertsCfg(); }
-        const patch = { sound: $('#ac-sound', el).checked, stocks: $('#ac-stocks', el).checked, radar: $('#ac-radar', el).checked, invest: $('#ac-inv', el).checked, move: +$('#ac-mv', el).value, token: $('#ac-tk', el).value.trim() || null };
+        const patch = { sound: $('#ac-sound', el).checked, voice: $('#ac-voice', el).checked, stocks: $('#ac-stocks', el).checked, radar: $('#ac-radar', el).checked, invest: $('#ac-inv', el).checked, move: +$('#ac-mv', el).value, token: $('#ac-tk', el).value.trim() || null };
         const tokenChanged = (patch.token || '') !== (c.token || '');
         await Alerts.saveCfg(patch); Sheet.close(); toast('Alertas salvos');
         if (tokenChanged) { Market.error = null; Alerts.run(true); }

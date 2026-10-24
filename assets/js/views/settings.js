@@ -173,7 +173,7 @@ Views.settings = {
       if (a === 'restore') Backup.restore();
       if (a === 'install') { App.installEvt?.prompt(); App.installEvt = null; }
       if (a === 'notif') App.enableNotifications().then(() => this.render(el));
-      if (a === 'test-notif') { Chime.play('up'); App.notify('Fin', 'Notificações funcionando corretamente.'); }
+      if (a === 'test-notif') App.notify('Fin', 'Notificações funcionando corretamente.');
       if (a === 'alerts') Views.invest.alertsCfg();
       if (a === 'wipe') {
         if (!(await confirmDialog(`Apagar TODAS as ${DB.tx.length} transações? Esta ação não pode ser desfeita.`, { title: 'Apagar tudo', ok: 'Continuar', danger: true }))) return;

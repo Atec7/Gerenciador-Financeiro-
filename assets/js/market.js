@@ -126,7 +126,38 @@ const Chime = {
     } catch {}
   }
 };
-['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => Chime.unlock(), { once: true, passive: true }));
+/* ── Voz: lê o alerta em português (funciona com o app aberto na tela) ── */
+const Voice = {
+  ok: 'speechSynthesis' in window,
+  voice() {
+    const vs = speechSynthesis.getVoices(), br = v => v.lang.replace('_', '-').toLowerCase();
+    return vs.find(v => br(v) === 'pt-br' && /google|luciana|francisca|maria/i.test(v.name)) || vs.find(v => br(v) === 'pt-br') || vs.find(v => br(v).startsWith('pt')) || null;
+  },
+  /** deixa o texto natural para ouvir: tira emojis, lê valores em reais e porcentagens */
+  clean(t) {
+    return String(t)
+      .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '')
+      .replace(/([+−-])\s?R\$\s?/g, (m, s) => s === '+' ? 'mais R$ ' : 'menos R$ ').replace(/\(s\)/g, 's')
+      .replace(/R\$\s?([\d.]+),(\d{2})/g, (m, i, c) => `${i.replace(/\./g, '')} reais${c !== '00' ? ` e ${+c} centavos` : ''}`)
+      .replace(/(\d+),(\d+)%/g, '$1 vírgula $2 por cento').replace(/(\d+)%/g, '$1 por cento')
+      .replace(/P\/L/g, 'P sobre L').replace(/±/g, 'mais ou menos ').replace(/≤/g, 'até').replace(/≥/g, 'a partir de')
+      .replace(/\b([A-Z]{4})(\d{1,2})\b/g, (m, l, n) => `${l.split('').join(' ')} ${n}`)
+      .replace(/\s+/g, ' ').trim();
+  },
+  say(title, body) {
+    if (!this.ok || DB.alerts?.voice === false || document.hidden) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(this.clean(`${title}${/[.!?]$/.test(title) ? '' : '.'} ${body || ''}`));
+      u.lang = 'pt-BR'; u.rate = 1.02; try { const v = this.voice(); if (v) u.voice = v; } catch {}
+      setTimeout(() => speechSynthesis.speak(u), DB.alerts?.sound === false ? 0 : 700); // depois do "ding"
+    } catch {}
+  },
+  /** iPhone/Android só liberam a fala depois de um toque do usuário */
+  unlock() { if (!this.ok || this._u) return; this._u = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); speechSynthesis.getVoices(); } catch {} }
+};
+if (Voice.ok) speechSynthesis.onvoiceschanged = () => {};
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { Chime.unlock(); Voice.unlock(); }, { once: true, passive: true }));
 
 const Alerts = {
   SKEY: 'fin_alerts_state', LKEY: 'fin_alerts_log', timer: null, running: false,
@@ -229,9 +260,8 @@ const Alerts = {
   /** mostra o alerta: som + cartão no app + notificação do sistema */
   fire({ kind = 'info', title, body, tag }) {
     const log = this.log(); log.unshift({ kind, title, body, at: new Date().toISOString() }); LS.set(this.LKEY, log.slice(0, 40));
-    Chime.play(kind);
     if (!document.hidden) this.card({ kind, title, body });
-    App.notify(title, body, tag, { vibrate: [120, 60, 120], renotify: true, silent: false });
+    App.notify(title, body, tag, { vibrate: [120, 60, 120], renotify: true, silent: false, kind });
     Bus.emit('data', 'alerts');
   },
 
