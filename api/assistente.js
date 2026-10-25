@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     const t0 = Date.now();
     const limite = new Promise(r => setTimeout(() => r({ erro: 'diagnóstico passou de 55 s' }), 55000));
     let r;
-    try { r = { ok: true, ...(await Promise.race([Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0, ouvir: q.ouvir === '1' }), limite])) }; }
+    try { r = { ok: true, ...(await Promise.race([Gree.diag({ testar: q.testar === '1', servidor: Number(q.servidor) || 0, ouvir: q.ouvir === '1', temp: Math.max(0, Math.min(30, Number(q.temp) || 0)) }), limite])) }; }
     catch (e) { r = { ok: false, erro: e.message, onde: String(e.stack || '').split('\n').slice(0, 3).join(' | ') }; }
     r.msTotal = Date.now() - t0; r.em = new Date().toISOString();
     // guarda o resultado (sem dados sensíveis) para leitura posterior em /assistente/diag

@@ -251,7 +251,7 @@ export async function status() {
   });
 }
 /** Diagnóstico passo a passo (sem dados sensíveis): login, conexão MQTT, leitura do estado nas duas cifras */
-export async function diag({ testar = false, servidor = 0, ouvir = false } = {}) {
+export async function diag({ testar = false, servidor = 0, ouvir = false, temp = 0 } = {}) {
   const out = { passos: [] }, P = x => out.passos.push(x);
   let cfg = await load('gree');
   if (!cfg?.uid) return { ...out, erro: 'ar não configurado (ou senha diferente da usada na configuração)' };
@@ -300,6 +300,19 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
       P({ mqtt: h, resultado: st ? `RESPONDEU com cifra V${st.cipher}` : 'conectou, mas o ar não respondeu', estado: st?.estado || null, log });
       if (st) {
         cfg.cipher = st.cipher; cfg.mqttHost = h; await save('gree', cfg);
+        if (temp) {
+          // muda só a temperatura (sem mandar "ligar") e confere o estado logo depois e 15 s depois
+          const lg = [], cols = ['Pow', 'Mod', 'SetTem', 'TemUn', 'TemRec', 'StHt', 'SwhSlp', 'Quiet', 'Tur'];
+          const linha = await mqttSession(cfg, dev, async api => {
+            const ler = async () => { await api.send({ t: 'status', cols }, st.cipher); const d = await api.next(x => x.t === 'dat', 5000); return d ? datToObj(d) : null; };
+            const antes = await ler();
+            await api.send({ t: 'cmd', opt: ['SetTem', 'TemUn'], p: [temp, 0] }, st.cipher); const res = await api.next(x => x.t === 'res', 4000);
+            await new Promise(r => setTimeout(r, 2000)); const logo = await ler();
+            await new Promise(r => setTimeout(r, 13000)); const depois = await ler();
+            return { antes, res: res ? { opt: res.opt, p: res.p, val: res.val, r: res.r } : null, logo, depois };
+          }, { host: h, log: lg, max: 40000 });
+          P({ teste: `temperatura ${temp}`, ...linha, log: lg.filter(l => / msg /.test(l)) });
+        }
         if (testar) { const lg = []; await mqttSession(cfg, dev, async api => { await api.send(packFor({ acao: 'ligar' }), st.cipher); return api.next(x => x.t === 'res', 5000); }, { host: h, log: lg }); P({ teste: 'ligar', log: lg }); }
         break;
       }
