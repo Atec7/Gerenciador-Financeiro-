@@ -1,6 +1,6 @@
 {
-  "name": "Hi Tec Robô",
-  "short_name": "Hi Tec",
+  "name": "Sete Robô",
+  "short_name": "Sete",
   "description": "Controle a TV e o ar-condicionado pela voz.",
   "start_url": "./",
   "scope": "./",

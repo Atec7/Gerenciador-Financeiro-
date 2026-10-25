@@ -1,5 +1,5 @@
 /* Ouvido do robô (com o app aberto na tela):
-   · duas palmas → chama o robô        · "Hi Tec" → chama o robô
+   · duas palmas → chama o robô        · "Sete" → chama o robô
    · música tocando no ambiente → avisa (com o ritmo em batidas por minuto) para ele dançar
    O microfone é analisado só aqui no aparelho; nada de áudio é enviado para lugar nenhum. */
 const Ouvido = (() => {
@@ -115,8 +115,9 @@ const Ouvido = (() => {
     }
   }
 
-  /* "Hi Tec": reconhecimento de voz contínuo, só procurando a palavra de chamada */
-  const WAKE = /\b(hi|hai|rai|ai|oi|hey|hei|ei|high|right|hy)[ -]?(tec|tech|tek|teck|tequi|teco)\b|\b(hitec|hitech|haitec|raitec|aitec|hytec|haitek|hitek)\b/;
+  /* "Sete": reconhecimento de voz contínuo, só procurando a palavra de chamada */
+  // "Sete" (o nome do robô) como primeira ou segunda palavra da frase: "Sete", "Ei Sete", "Oi, Sete"; o reconhecimento às vezes escreve "7"
+  const WAKE = /^\s*(?:[a-z]+[ ,]+)?(sete|7|setti|sette)(?=$|[\s,.!?])/;
   function iniciarWake() {
     if (!st.ativo || st.pausado || !st.wakeOk || st.wake) return;
     try {
@@ -143,6 +144,6 @@ const Ouvido = (() => {
     ligar, desligar, pausar, retomar,
     on(ev, f) { cb[ev] = f; },
     get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk && !st.wakeConflito; }, get musica() { return musica; },
-    _sim: { palmas: () => cb.palmas(), wake: () => cb.wake('hi tec'), musica: (on, bpm) => cb.musica(on, bpm) } // para testes
+    _sim: { palmas: () => cb.palmas(), wake: () => cb.wake('sete'), musica: (on, bpm) => cb.musica(on, bpm) } // para testes
   };
 })();

@@ -138,7 +138,7 @@ function papo(t) {
   if (/\b(tchau|ate mais|ate logo|pode parar|para de ouvir|chega|silencio|dormir)\b/.test(n)) { S.conversa = false; syncConv(); return { text: 'Tá bom! Quando precisar, é só tocar em mim.', mood: 'sleep', listen: false }; }
   if (/\b(oi|ola|e ai|eai|bom dia|boa tarde|boa noite|hey)\b/.test(n) && n.split(' ').length <= 4) return { text: `${/bom dia/.test(n) ? 'Bom dia' : /boa tarde/.test(n) ? 'Boa tarde' : /boa noite/.test(n) ? 'Boa noite' : 'Oi'}! Em que posso ajudar? Posso ligar a TV, o ar, ou te ajudar a me configurar.`, mood: 'happy' };
   if (/\b(obrigad|valeu|brigad)/.test(n)) return { text: 'De nada! Estou aqui para isso.', mood: 'happy' };
-  if (/\b(quem e voce|qual (e )?seu nome|como (voce )?se chama|voce e quem)\b/.test(n)) return { text: 'Eu sou o Hi Tec, seu robô assistente. Eu controlo a sua TV e o seu ar-condicionado, ponho música e converso com você. Para me chamar, diga Hi Tec ou bata palmas duas vezes.', mood: 'happy' };
+  if (/\b(quem e voce|qual (e )?seu nome|como (voce )?se chama|voce e quem)\b/.test(n)) return { text: 'Eu sou o Sete, seu robô assistente. Eu controlo a sua TV e o seu ar-condicionado, ponho música e converso com você. Para me chamar, diga Sete ou bata palmas duas vezes.', mood: 'happy' };
   if (/\b(o que voce (faz|sabe)|ajuda|comandos|o que posso (falar|pedir))\b/.test(n) && !/configur/.test(n)) return { text: 'Na TV: liga a TV, volume 15, abre a Netflix, toca Evidências no YouTube, quero ouvir Djavan, pausa, próxima, e também pra baixo, direita, ok e voltar para navegar. No ar: liga o ar, ar em 22 graus, modo frio. Também te ajudo a me configurar.' };
   if (/\b(que horas|horas sao)\b/.test(n)) { const d = new Date(); return { text: `Agora são ${d.getHours()} horas e ${d.getMinutes()} minutos.` }; }
   if (/\b(piada|me faz rir|conta algo engracado)\b/.test(n)) return { text: PIADAS[Math.floor(Math.random() * PIADAS.length)], mood: 'happy' };
@@ -322,11 +322,11 @@ function pararDancaTV(modo) {
   S.musicaTV = null; clearTimeout(dancaTimer); if (!Ouvido.musica) Robot.dance(false);
 }
 
-/* ── ouvido: duas palmas ou "Hi Tec" chamam o robô; música no ambiente faz ele dançar ── */
+/* ── ouvido: duas palmas ou "Sete" chamam o robô; música no ambiente faz ele dançar ── */
 async function acordar(como) {
   if (passo?.field || Voz.ouvindo || document.body.classList.contains('locked')) return;
   S.conversa = true; syncConv(); Robot.mood('happy', 1500);
-  await Voz.say(como === 'palmas' ? 'Oi! Ouvi as palmas. Pode falar.' : 'Oi! Estou ouvindo.');
+  await Voz.say('Estou te ouvindo.');
   ouvir();
 }
 Ouvido.on('palmas', () => acordar('palmas'));
@@ -337,7 +337,7 @@ async function ligarOuvido(avisar = false) {
   const ok = await Ouvido.ligar();
   $('#btn-ear').classList.toggle('active', ok);
   if (!ok) { if (avisar) falar('Não consegui usar o microfone. Libere o microfone para este site nas configurações do navegador.', { mood: 'sad' }); return; }
-  $('#heard').textContent = 'Diga “Hi Tec” ou bata palmas duas vezes para me chamar.';
+  $('#heard').textContent = 'Diga “Sete” ou bata palmas duas vezes para me chamar.';
 }
 
 /* ── entrada: tudo que o usuário fala, digita ou toca passa por aqui ── */
@@ -347,6 +347,12 @@ const NAO = /^(nao|n|agora nao|depois|nao quero|nem|negativo|nao ligou|nao funci
 async function responder(texto, viaBotao = false) {
   texto = String(texto || '').trim(); if (!texto) return;
   if (!viaBotao) log(texto, 'me');
+  // chamou pelo nome no começo da frase ("Sete, liga a TV"): tira o nome; só "Sete" → responde e escuta
+  if (!passo) {
+    const semNome = texto.replace(/^\s*(?:(?:ei|oi|ô|o|alô|hey)[\s,]+)?(?:sete|7)(?:[\s,.!?]+|$)/i, '').trim();
+    if (!semNome && texto.trim()) { await Voz.say('Estou te ouvindo.'); return ouvir(); }
+    if (semNome !== texto.trim() && semNome.split(' ').length >= 2) texto = semNome;
+  }
   const n = norm(texto);
   if (!passo) lembrarConversa('eu', texto);
   if (passo) {
@@ -413,7 +419,7 @@ async function proximoPasso() {
 
 const PASSOS = {
   entrar: {
-    say: () => 'Oi! Eu sou o Hi Tec. Para começar, digite a minha senha.',
+    say: () => 'Oi! Eu sou o Sete. Para começar, digite a minha senha.',
     field: { inputs: [{ id: 'senha', type: 'password', label: 'Senha do robô', autocomplete: 'current-password' }], submit: 'Entrar' },
     on: async (t, n, v) => {
       const s = (v?.senha || '').trim(); if (!s) return falar('Digite a senha no campo, por favor.');
@@ -422,14 +428,14 @@ const PASSOS = {
         const st = await statusComSenha(s);
         S.senha = s; LS.set('as_senha', s); destravar();
         const pronto = st.tv || st.ar || st.youtube;
-        if (pronto) { LS.set('as_configurado', true); encerrarPassos(); ligarOuvido(); return falar('Senha certa! Bem-vindo de volta. Já lembro de tudo que você configurou. Para me chamar, diga Hi Tec ou bata palmas duas vezes.', { mood: 'happy' }); }
+        if (pronto) { LS.set('as_configurado', true); encerrarPassos(); ligarOuvido(); return falar('Senha certa! Bem-vindo de volta. Já lembro de tudo que você configurou. Para me chamar, diga Sete ou bata palmas duas vezes.', { mood: 'happy' }); }
         await Voz.say('Senha certa!', { mood: 'happy' }); return proximoPasso();
       } catch (e) { return falar(e.status === 401 ? 'Senha errada. Tente de novo.' : e.message, { mood: 'sad' }); }
     }
   },
   intro: {
-    say: () => S.aqui ? 'Oi! Eu sou o Hi Tec, seu robô assistente. Vou te ajudar a me configurar, passo a passo. Vamos começar?'
-      : 'Oi! Eu sou o Hi Tec, seu robô assistente. Vou te ajudar a me configurar. São quatro etapas: meu servidor, a senha, o ar e a TV. Leva uns 20 minutos. Vamos começar?',
+    say: () => S.aqui ? 'Oi! Eu sou o Sete, seu robô assistente. Vou te ajudar a me configurar, passo a passo. Vamos começar?'
+      : 'Oi! Eu sou o Sete, seu robô assistente. Vou te ajudar a me configurar. São quatro etapas: meu servidor, a senha, o ar e a TV. Leva uns 20 minutos. Vamos começar?',
     choices: [{ label: 'Vamos lá!', value: 'sim', primary: true }, { label: 'Agora não', value: 'nao' }],
     on: (t, n) => NAO.test(n) ? (encerrarPassos(), falar('Sem problemas! Quando quiser, diga: me ajuda a configurar.')) : proximoPasso()
   },
@@ -720,7 +726,7 @@ $('#type-form').onsubmit = async e => { e.preventDefault(); Voz.cancel(); const 
 document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { S.started = true; responder(b.dataset.q); });
 $('#btn-ear').onclick = async () => {
   S.started = true; S.atento = !Ouvido.ativo; LS.set('as_atento', S.atento);
-  if (S.atento) { await ligarOuvido(true); if (Ouvido.ativo) falar(Ouvido.ouveNome ? 'Estou atento! Diga Hi Tec ou bata palmas duas vezes para me chamar. Se tocar música, eu danço.' : 'Estou atento! Bata palmas duas vezes para me chamar. Se tocar música, eu danço.', { mood: 'happy' }); }
+  if (S.atento) { await ligarOuvido(true); if (Ouvido.ativo) falar(Ouvido.ouveNome ? 'Estou atento! Diga Sete ou bata palmas duas vezes para me chamar. Se tocar música, eu danço.' : 'Estou atento! Bata palmas duas vezes para me chamar. Se tocar música, eu danço.', { mood: 'happy' }); }
   else { Ouvido.desligar(); $('#btn-ear').classList.remove('active'); Robot.dance(false); falar('Parei de prestar atenção. Toque em mim quando precisar.'); }
 };
 $('#btn-conv').onclick = () => { S.conversa = !S.conversa; syncConv(); S.started = true; falar(S.conversa ? 'Modo conversa ligado! Pode falar.' : 'Modo conversa desligado.', { mood: S.conversa ? 'happy' : 'idle' }); };
