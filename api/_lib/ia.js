@@ -101,24 +101,26 @@ export async function conversar(texto, historico = [], ctx = {}) {
   const contents = hist.concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
   const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) });
   const ordem = ordenar([cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i));
-  let erro; const tentativas = [];
+  let erro; const tentativas = [], inicio = Date.now();
+  const anota = x => { tentativas.push(x); try { ctx.onLog?.(tentativas); } catch {} };
   for (const m of ordem.slice(0, 4)) {
+    if (Date.now() - inicio > 35000) break; // não estoura o tempo da função
     const t0 = Date.now();
     try {
       let raw;
       try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
       catch (e) {
-        tentativas.push(`${m} com busca: ${e.status} ${e.message.slice(0, 80)} (${Date.now() - t0} ms)`);
-        if (![400, 429, 403].includes(e.status)) throw e;
+        anota(`${m} com busca: ${e.status} ${e.message.slice(0, 80)} (${Date.now() - t0} ms)`);
+        if (![400, 429, 403, 503].includes(e.status)) throw e;
         raw = await gerar(cfg.key, m, contents, sistema, false, false); // sem a busca do Google (modelo ou cota grátis sem busca)
         if (e.status === 400 && !cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
       }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
-      tentativas.push(`${m}: ok (${Date.now() - t0} ms)`);
+      anota(`${m}: ok (${Date.now() - t0} ms)`);
       const r = interpretar(raw); r.tentativas = tentativas;
       if (!r.fala && !r.comandos.length) throw Object.assign(new Error('resposta vazia'), { status: 500 });
       return r;
-    } catch (e) { erro = e; tentativas.push(`${m}: ${e.status} ${String(e.message).slice(0, 80)} (${Date.now() - t0} ms)`); if (![404, 429, 500, 503].includes(e.status)) break; }
+    } catch (e) { erro = e; anota(`${m}: ${e.status} ${String(e.message).slice(0, 80)} (${Date.now() - t0} ms)`); if (![404, 429, 500, 503].includes(e.status)) break; }
   }
   throw Object.assign(new Error(erro?.status === 429 ? 'Minha cota grátis de inteligência acabou por agora. Tente daqui a pouco.' : `Não consegui pensar agora (${erro?.message}).`), { tentativas });
 }

@@ -55,7 +55,9 @@ export default async function handler(req, res) {
   if (acao === 'diag-ia') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
     const t0 = Date.now(); let r;
-    try { r = { ok: true, ...(await IA.conversar(String(q.texto || 'oi, tudo bem?'), [], {})) }; } catch (e) { r = { ok: false, erro: e.message, tentativas: e.tentativas }; }
+    const salvar = x => fetch(`${FB}/assistente/diag-ia.json`, { method: 'PUT', body: JSON.stringify({ parcial: true, tentativas: x, em: new Date().toISOString() }) }).catch(() => {});
+    await salvar(['começou']);
+    try { r = { ok: true, ...(await IA.conversar(String(q.texto || 'oi, tudo bem?'), [], { onLog: salvar })) }; } catch (e) { r = { ok: false, erro: e.message, tentativas: e.tentativas }; }
     const c = await (await import('./_lib/store.js')).load('ia').catch(() => null);
     const out = { ...r, modelo: c?.modelo, modelos: c?.modelos, semBusca: !!c?.semBusca, ms: Date.now() - t0, em: new Date().toISOString() };
     await fetch(`${FB}/assistente/diag-ia.json`, { method: 'PUT', body: JSON.stringify(out) }).catch(() => {});
