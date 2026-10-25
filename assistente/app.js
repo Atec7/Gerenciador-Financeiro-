@@ -501,7 +501,7 @@ const PASSOS = {
     on: (t, n) => SIM.test(n) ? iniciarPasso('ar2') : falar('Quando o ar ligar pelo Gree+, toque em Pronto.')
   },
   ar2: {
-    say: 'Ótimo! Agora digite o e-mail e a senha do Gree+, e confira a região.',
+    say: 'Ótimo! Um detalhe importante: a Gree só deixa um aparelho conectado por conta. Se eu usar a mesma conta do seu celular, o Gree+ te desconecta toda vez. O melhor é criar uma segunda conta no Gree+ só para mim e compartilhar a casa, ou o ar, com ela. Depois digite aqui o e-mail e a senha dessa segunda conta, e confira a região.',
     field: { inputs: [
       { id: 'email', type: 'email', label: 'E-mail do Gree+', autocomplete: 'username' },
       { id: 'password', type: 'password', label: 'Senha do Gree+' },

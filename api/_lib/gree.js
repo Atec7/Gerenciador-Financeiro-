@@ -61,7 +61,9 @@ async function login(base, user, password) {
   return { uid, token };
 }
 async function devices(base, uid, token) {
-  const { home = [] } = await cloud(base, '/App/GetHomes', body({ token, uid }, ['token', 'uid']));
+  const hs = await cloud(base, '/App/GetHomes', body({ token, uid }, ['token', 'uid']));
+  if (hs.r && hs.r !== 200) throw Object.assign(new Error(`Gree: ${hs.msg || hs.r}`), { auth: true });
+  const home = hs.home || [];
   const out = [];
   for (const h of home) {
     const d = await cloud(base, '/App/GetDevsInRoomsOfHomeV2', body({ token, homeId: h.id, uid }, ['token', 'uid', 'homeId']));
@@ -245,8 +247,7 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
     // escuta o canal do ar por ~45 s (a pessoa mexe no ar pelo app Gree+ usando 4G) e testa variações do pedido de estado
     const log = [];
     try {
-      const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
-      cfg = { ...cfg, uid, token }; await save('gree', cfg);
+      // usa o token guardado: entrar de novo derrubaria o Gree+ do celular (a Gree só deixa uma sessão por conta)
       const dev = cfg.devs[0], parent = parentMac(dev.mac);
       await mqttSession(cfg, dev, async api => {
         const variantes = [
@@ -262,9 +263,10 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
   out.regiao = cfg.regiao; out.cifraSalva = cfg.cipher || null;
   out.aparelhos = (cfg.devs || []).map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, macFim00: d.mac.endsWith('00'), chaveTam: d.key.length }));
   if (servidor === 0) try {
-    const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
-    cfg = { ...cfg, uid, token }; await save('gree', cfg); P('login: ok');
-    const devs = await devices(base, uid, token);
+    const base = REGIOES[cfg.regiao][0];
+    let devs; try { devs = await devices(base, cfg.uid, cfg.token); P('token guardado: ok (sem novo login)'); }
+    catch { const { uid, token } = await login(base, cfg.email, cfg.password); cfg = { ...cfg, uid, token }; await save('gree', cfg); P('login: ok'); devs = await devices(base, uid, token); }
+    const { uid, token } = cfg;
     out.aparelhosAgora = devs.map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, mudouMac: !cfg.devs.some(x => x.mac === d.mac), campos: d.bruto }));
     try { const h = await cloud(base, '/App/GetHomes', body({ token, uid }, ['token', 'uid'])); out.camposCasa = Object.keys(h); } catch {}
     if (devs.length) { cfg.devs = devs; await save('gree', cfg); }
