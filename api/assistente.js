@@ -51,6 +51,14 @@ export default async function handler(req, res) {
     r.em = new Date().toISOString();
     return res.json(r);
   }
+  // teste da inteligência (GET, com a senha): uma pergunta e a resposta do Gemini
+  if (acao === 'diag-ia') {
+    if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
+    const t0 = Date.now(); let r;
+    try { r = { ok: true, ...(await IA.conversar(String(q.texto || 'oi, tudo bem?'), [], {})) }; } catch (e) { r = { ok: false, erro: e.message }; }
+    const c = await (await import('./_lib/store.js')).load('ia').catch(() => null);
+    return res.json({ ...r, modelo: c?.modelo, semBusca: !!c?.semBusca, ms: Date.now() - t0 });
+  }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
