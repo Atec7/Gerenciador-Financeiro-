@@ -25,26 +25,36 @@ export async function setup(key) {
   if (key.length < 20) throw new Error('Essa chave parece incompleta. Ela começa com AIza e é bem comprida.');
   const modelos = ordenar(await listarModelos(key));
   if (!modelos.length) throw new Error('Essa chave não tem nenhum modelo Gemini disponível.');
-  // testa de verdade, do melhor para o pior, até um responder (alguns podem estar sem cota grátis)
-  let erro;
-  for (const m of modelos.slice(0, 6)) {
-    try { await gerar(key, m, [{ role: 'user', parts: [{ text: 'Responda só: ok' }] }], 'Responda em uma palavra.', false); await save('ia', { key, modelo: m, modelos: modelos.slice(0, 6) }); return m; }
-    catch (e) { erro = e; }
-  }
-  throw new Error(`Nenhum modelo respondeu (${erro?.message}). A cota grátis pode estar esgotada; tente mais tarde.`);
+  const cfg = await escolherModelos({ key });
+  if (!cfg.v3) throw new Error('Nenhum modelo respondeu. A cota grátis pode estar esgotada; tente mais tarde.');
+  return cfg.modelo;
+}
+/** testa os modelos da chave ao mesmo tempo e fica só com os que respondem rápido (alguns não têm cota grátis) */
+async function escolherModelos(cfg) {
+  try {
+    const todos = ordenar(await listarModelos(cfg.key)).slice(0, 10);
+    const teste = [{ role: 'user', parts: [{ text: 'Diga oi.' }] }];
+    const res = await Promise.all(todos.map(async m => { const t0 = Date.now(); try { await gerar(cfg.key, m, teste, 'Responda em uma palavra.', false, false, 9000); return { m, ms: Date.now() - t0 }; } catch { return null; } }));
+    const ok = res.filter(Boolean).map(x => x.m);
+    if (ok.length) { cfg = { ...cfg, modelos: ok.slice(0, 6), modelo: ok[0], v3: true, semBusca: cfg.semBusca }; await save('ia', cfg); }
+  } catch {}
+  return cfg;
 }
 export async function configured() { const c = await load('ia'); return !!c?.key; }
 
-async function gerar(key, modelo, contents, sistema, json = true, busca = false) {
+const pensamento = m => /gemini-2\.5/.test(m) ? { thinkingBudget: /lite/.test(m) ? 0 : 0 } : /gemini-[3-9]/.test(m) ? { thinkingLevel: 'low' } : null;
+async function gerar(key, modelo, contents, sistema, json = true, busca = false, ms = 18000, semPensar = true) {
+  const tc = semPensar ? pensamento(modelo) : null;
   const body = {
     systemInstruction: { parts: [{ text: sistema }] }, contents,
-    generationConfig: { temperature: json ? 0.8 : 1, maxOutputTokens: 1200, ...(json ? { responseMimeType: 'application/json' } : {}) },
+    generationConfig: { temperature: json ? 0.8 : 1, maxOutputTokens: 1200, ...(json ? { responseMimeType: 'application/json' } : {}), ...(tc ? { thinkingConfig: tc } : {}) },
     ...(busca ? { tools: [{ google_search: {} }] } : {})
   };
   let r;
-  try { r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(18000) }); }
+  try { r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) }); }
   catch (e) { throw Object.assign(new Error(e.name === 'TimeoutError' ? 'demorou demais' : e.message), { status: 503 }); }
   const j = await r.json().catch(() => ({}));
+  if (r.status === 400 && tc && /think/i.test(j.error?.message || '')) return gerar(key, modelo, contents, sistema, json, busca, ms, false); // modelo não aceita esse ajuste
   if (!r.ok) throw Object.assign(new Error(j.error?.message?.slice(0, 160) || `HTTP ${r.status}`), { status: r.status });
   return (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
 }
@@ -88,7 +98,7 @@ function interpretar(raw) {
 export async function conversar(texto, historico = [], ctx = {}) {
   let cfg = await load('ia');
   if (!cfg?.key) throw Object.assign(new Error('Ainda não tenho a inteligência ligada.'), { setup: 'ia' });
-  if (!cfg.v2) { try { const todos = ordenar(await listarModelos(cfg.key)); if (todos.length) { cfg = { ...cfg, modelos: todos.slice(0, 8), modelo: todos[0], v2: true }; await save('ia', cfg); } } catch {} }
+  if (!cfg.v3) cfg = await escolherModelos(cfg);
   // o histórico precisa alternar user/model e começar pelo usuário
   const hist = [];
   for (const h of historico.slice(-20)) {
@@ -111,9 +121,9 @@ export async function conversar(texto, historico = [], ctx = {}) {
       try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
       catch (e) {
         anota(`${m} com busca: ${e.status} ${e.message.slice(0, 80)} (${Date.now() - t0} ms)`);
-        if (![400, 429, 403, 503].includes(e.status)) throw e;
+        if (![400, 429, 403].includes(e.status)) throw e;
         raw = await gerar(cfg.key, m, contents, sistema, false, false); // sem a busca do Google (modelo ou cota grátis sem busca)
-        if (e.status === 400 && !cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
+        if ([400, 429, 403].includes(e.status) && !cfg.semBusca) { cfg = { ...cfg, semBusca: true }; await save('ia', cfg); } // sem cota/suporte de busca: não tenta mais
       }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
       anota(`${m}: ok (${Date.now() - t0} ms)`);
