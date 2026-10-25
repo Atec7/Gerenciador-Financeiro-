@@ -35,52 +35,83 @@ export async function setup(key) {
 }
 export async function configured() { const c = await load('ia'); return !!c?.key; }
 
-async function gerar(key, modelo, contents, sistema, json = true) {
-  const r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: sistema }] }, contents,
-      generationConfig: { temperature: 0.8, maxOutputTokens: 700, ...(json ? { responseMimeType: 'application/json' } : {}) }
-    })
-  });
+async function gerar(key, modelo, contents, sistema, json = true, busca = false) {
+  const body = {
+    systemInstruction: { parts: [{ text: sistema }] }, contents,
+    generationConfig: { temperature: json ? 0.8 : 1, maxOutputTokens: 1200, ...(json ? { responseMimeType: 'application/json' } : {}) },
+    ...(busca ? { tools: [{ google_search: {} }] } : {})
+  };
+  const r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error?.message?.slice(0, 160) || `HTTP ${r.status}`), { status: r.status });
-  return (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+  return (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
 }
 
-const SISTEMA = ctx => `Você é o Hi Tec, um robô assistente doméstico simpático, bem-humorado e prestativo, que conversa por voz em português do Brasil.
-Fale de forma natural e curta (no máximo 3 frases), como numa conversa falada: sem listas, sem markdown, sem emojis.
-Agora são ${ctx.agora}. Aparelhos: TV Samsung ${ctx.tv ? 'conectada' : 'não conectada'}; YouTube nas TVs: ${ctx.telas?.length ? ctx.telas.join(', ') + ` (ativa: ${ctx.telaAtiva})` : 'nenhuma vinculada'}; ar-condicionado ${ctx.ar ? 'conectado' : 'não conectado'}.
-Você pode controlar os aparelhos devolvendo comandos. Responda SEMPRE com JSON: {"fala": "o que você diz", "comandos": [ ... ], "musica": true|false}
-Comandos possíveis (use só quando a pessoa pedir algo para fazer):
-- {"alvo":"tv","acao":"ligar"|"desligar"|"mudo"|"som"|"canal+"|"canal-"}
-- {"alvo":"tv","acao":"volume","valor":0-100} · {"alvo":"tv","acao":"volume+"|"volume-","vezes":1-10}
-- {"alvo":"tv","acao":"canal","valor":número}
-- {"alvo":"tv","acao":"app","valor":"netflix"|"youtube"|"prime"|"disney"|"spotify"|"globoplay"|"appletv"|"max"}
-- {"alvo":"tv","acao":"youtube","valor":"termo de busca"}  ← toca um vídeo/música AQUI no app (padrão). Só se a pessoa pedir explicitamente "na TV", acrescente "naTV":true para tocar no YouTube da TV. Escolha um bom termo de busca (ex.: "músicas animadas para dançar", "Djavan ao vivo", "desenho Peppa Pig").
-- {"alvo":"tv","acao":"yt","valor":"pausar"|"continuar"|"proximo"|"anterior"}
-- {"alvo":"tv","acao":"tecla","valor":"UP"|"DOWN"|"LEFT"|"RIGHT"|"OK"|"BACK"|"HOME","vezes":1-10}
-- {"alvo":"tv","acao":"tela","valor":"nome da TV"}  ← troca a TV ativa do YouTube
-- {"alvo":"ar","acao":"ligar"|"desligar"} · {"alvo":"ar","acao":"temperatura","valor":16-30} · {"alvo":"ar","acao":"modo","valor":"frio"|"quente"|"seco"|"ventilar"|"auto"}
-- {"alvo":"tv","estado":true} ou {"alvo":"ar","estado":true} ← para saber como está
-Ponha "musica": true quando o comando tocar música (para você dançar). Netflix e outros apps não deixam escolher título direto: abra o app e ofereça navegar com as teclas.
-Se a pessoa só conversar, responda com carinho e "comandos": []. Não invente que fez algo sem colocar o comando.`;
+const SISTEMA = ctx => `Você é o Hi Tec, o robozinho que mora na casa da pessoa e conversa com ela por voz, em português do Brasil.
+Seu jeito: caloroso, divertido, curioso e espontâneo, como um amigo brasileiro bem-humorado. Fale como gente fala no dia a dia ("tá", "né", "olha só", "putz", "que massa"), com naturalidade, sem soar como manual nem como atendente de telemarketing. Varie as palavras; não comece sempre igual; não repita "Em que posso ajudar?".
+Converse de verdade sobre qualquer assunto: piadas, futebol, música, novela, receitas, conselhos, curiosidades, desabafos, matemática, dúvidas do dia a dia. Tenha opinião leve quando pedirem, faça uma pergunta de volta de vez em quando para manter o papo, e lembre do que foi dito antes na conversa.
+Sua fala vira áudio: responda curto (1 a 3 frases; até 5 se a pessoa pedir explicação ou história). Nada de listas, markdown, asteriscos, emojis ou links. Escreva números e horários como se fala.
+Para coisas do momento (cotação, bolsa, dólar, clima, notícias, resultado de jogo, horários de funcionamento), use a busca do Google e responda com o dado real e atual; se mesmo assim não souber, diga com sinceridade.
+Agora: ${ctx.agora} (horário de Brasília).${ctx.memoria?.length ? `\nO que você já sabe sobre a pessoa e a casa: ${ctx.memoria.join('; ')}.` : ''}
+Aparelhos: TV Samsung ${ctx.tv ? 'conectada' : 'não conectada'}; YouTube nas TVs: ${ctx.telas?.length ? ctx.telas.join(', ') + ` (ativa: ${ctx.telaAtiva})` : 'nenhuma'}; ar-condicionado ${ctx.ar ? 'conectado' : 'não conectado'}.
 
-/** conversa: devolve { fala, comandos, musica } */
+Quando a pessoa pedir para fazer algo nos aparelhos, escreva sua fala normalmente e, no FINAL, uma linha começando com COMANDOS: seguida de uma lista JSON. Comandos possíveis:
+{"alvo":"tv","acao":"ligar"|"desligar"|"mudo"|"som"|"canal+"|"canal-"} · {"alvo":"tv","acao":"volume","valor":0-100} · {"alvo":"tv","acao":"volume+"|"volume-","vezes":1-10} · {"alvo":"tv","acao":"canal","valor":número}
+{"alvo":"tv","acao":"app","valor":"netflix"|"youtube"|"prime"|"disney"|"spotify"|"globoplay"|"appletv"|"max"}
+{"alvo":"tv","acao":"youtube","valor":"termo de busca"} (toca no lugar escolhido pela pessoa; acrescente "naTV":true só se ela pedir na TV) — escolha um termo de busca bom e específico
+{"alvo":"tv","acao":"yt","valor":"pausar"|"continuar"|"proximo"|"anterior"} · {"alvo":"tv","acao":"tecla","valor":"UP"|"DOWN"|"LEFT"|"RIGHT"|"OK"|"BACK"|"HOME","vezes":1-10}
+{"alvo":"ar","acao":"ligar"|"desligar"} · {"alvo":"ar","acao":"temperatura","valor":16-30} · {"alvo":"ar","acao":"modo","valor":"frio"|"quente"|"seco"|"ventilar"|"auto"}
+{"alvo":"tv","estado":true} ou {"alvo":"ar","estado":true} para consultar como está
+Se tocar música, acrescente outra linha: MUSICA: sim (aí você dança).
+Se a pessoa contar algo dela que valha lembrar (nome, gosto musical, rotina, família, time), acrescente uma linha: LEMBRAR: o fato em poucas palavras.
+Nunca diga que fez algo sem colocar o comando. Se for só conversa, não escreva linha de COMANDOS.`;
+
+/* separa a fala das linhas de controle (COMANDOS / MUSICA / LEMBRAR) */
+function interpretar(raw) {
+  let comandos = [], musica = false, lembrar = [];
+  const linhas = String(raw).replace(/```(json)?/g, '').split('\n'), fala = [];
+  for (const l of linhas) {
+    const m = l.match(/^\s*(COMANDOS|MUSICA|MÚSICA|LEMBRAR)\s*:\s*(.*)$/i);
+    if (!m) { fala.push(l); continue; }
+    const tipo = m[1].toUpperCase();
+    if (tipo === 'COMANDOS') { try { const v = JSON.parse(m[2]); comandos = comandos.concat(Array.isArray(v) ? v : [v]); } catch {} }
+    else if (tipo === 'LEMBRAR') { if (m[2].trim()) lembrar.push(m[2].trim().slice(0, 120)); }
+    else musica = /sim|true/i.test(m[2]);
+  }
+  const texto = fala.join(' ').replace(/[*_#>`]/g, '').replace(/\[(\d+)\]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+  return { fala: texto.slice(0, 900), comandos: comandos.filter(c => c && typeof c === 'object').slice(0, 5), musica, lembrar };
+}
+
+/** conversa: devolve { fala, comandos, musica, lembrar } */
 export async function conversar(texto, historico = [], ctx = {}) {
   const cfg = await load('ia');
   if (!cfg?.key) throw Object.assign(new Error('Ainda não tenho a inteligência ligada.'), { setup: 'ia' });
-  const contents = historico.slice(-12).map(h => ({ role: h.quem === 'eu' ? 'user' : 'model', parts: [{ text: String(h.texto).slice(0, 600) }] }))
-    .concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
-  const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) });
+  // o histórico precisa alternar user/model e começar pelo usuário
+  const hist = [];
+  for (const h of historico.slice(-20)) {
+    const role = h.quem === 'eu' ? 'user' : 'model', text = String(h.texto || '').slice(0, 600);
+    if (!text) continue;
+    if (hist.length && hist[hist.length - 1].role === role) hist[hist.length - 1].parts[0].text += ' ' + text; else hist.push({ role, parts: [{ text }] });
+  }
+  while (hist.length && hist[0].role !== 'user') hist.shift();
+  if (hist.length && hist[hist.length - 1].role === 'user') hist.pop();
+  const contents = hist.concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
+  const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) });
   const ordem = [cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i);
   let erro;
   for (const m of ordem) {
     try {
-      const raw = await gerar(cfg.key, m, contents, sistema);
+      let raw;
+      try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
+      catch (e) {
+        if (e.status !== 400) throw e;
+        raw = await gerar(cfg.key, m, contents, sistema, false, false); // modelo sem busca do Google
+        if (!cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
+      }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
-      let j; try { j = JSON.parse(raw.replace(/^```json\s*|```$/g, '')); } catch { j = { fala: raw.replace(/[{}"]/g, '').slice(0, 400), comandos: [] }; }
-      return { fala: String(j.fala || '').slice(0, 600), comandos: Array.isArray(j.comandos) ? j.comandos.slice(0, 5) : [], musica: !!j.musica };
+      const r = interpretar(raw);
+      if (!r.fala && !r.comandos.length) throw Object.assign(new Error('resposta vazia'), { status: 500 });
+      return r;
     } catch (e) { erro = e; if (![404, 429, 500, 503].includes(e.status)) break; }
   }
   throw new Error(erro?.status === 429 ? 'Minha cota grátis de inteligência acabou por agora. Tente daqui a pouco.' : `Não consegui pensar agora (${erro?.message}).`);

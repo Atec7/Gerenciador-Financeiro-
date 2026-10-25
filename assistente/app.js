@@ -11,7 +11,7 @@ const LS = {
 const S = {
   senha: LS.get('as_senha', ''), speak: LS.get('as_speak', true), conversa: LS.get('as_conversa', false),
   apiUrl: LS.get('as_api', ''), aqui: null, senhaVercel: null, tv: false, ar: false, started: false, emptyListens: 0,
-  atento: LS.get('as_atento', true), destino: LS.get('as_destino', 'app'), ia: false, telas: [], telaAtiva: null, hist: [], musicaTV: null
+  atento: LS.get('as_atento', true), destino: LS.get('as_destino', 'app'), ia: false, telas: [], telaAtiva: null, hist: LS.get('as_hist', []), musicaTV: null
 };
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const esc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
@@ -115,7 +115,12 @@ function log(text, who = 'bot', err = false) {
   $('#log').prepend(li); while ($('#log').children.length > 40) $('#log').lastChild.remove();
 }
 /** o robô fala e, no modo conversa (ou quando faz uma pergunta), já escuta a resposta */
+function lembrarConversa(quem, texto) {
+  if (passo || !texto) return;
+  S.hist.push({ quem, texto: String(texto).slice(0, 400) }); S.hist = S.hist.slice(-20); LS.set('as_hist', S.hist);
+}
 async function falar(text, opts = {}) {
+  lembrarConversa('robo', text);
   await Voz.say(text, opts);
   if (opts.listen === false) return;
   if ((S.conversa || opts.listen) && !(passo?.field)) ouvir();
@@ -276,9 +281,9 @@ const nomeTV = n => /\b(tv|televisao|televisão)\b/i.test(n || '') ? n : `TV ${n
 async function pensar(texto) {
   Robot.mood('thinking');
   try {
-    const r = await api({ acao: 'conversa', texto, historico: S.hist });
+    const r = await api({ acao: 'conversa', texto, historico: S.hist.slice(0, -1), memoria: LS.get('as_memoria', []) });
+    if (r.lembrar?.length) { const mem = LS.get('as_memoria', []); r.lembrar.forEach(f => { if (!mem.includes(f)) mem.push(f); }); LS.set('as_memoria', mem.slice(-30)); REG.add('lembrei', r.lembrar); }
     REG.add('IA', texto, '->', r);
-    S.hist.push({ quem: 'eu', texto }, { quem: 'robo', texto: r.fala }); S.hist = S.hist.slice(-12);
     const erros = [];
     for (const c of r.comandos || []) {
       try {
@@ -343,6 +348,7 @@ async function responder(texto, viaBotao = false) {
   texto = String(texto || '').trim(); if (!texto) return;
   if (!viaBotao) log(texto, 'me');
   const n = norm(texto);
+  if (!passo) lembrarConversa('eu', texto);
   if (passo) {
     if (/\b(repete|repetir|de novo|nao entendi|como assim|fala de novo)\b/.test(n)) return mostrarPasso();
     if (/\b(cancela|cancelar|sair da configuracao|para a configuracao|depois eu termino)\b/.test(n)) { encerrarPassos(); return falar('Tudo bem, paramos por aqui. Quando quiser continuar, diga: me ajuda a configurar.'); }
@@ -373,7 +379,7 @@ async function responder(texto, viaBotao = false) {
   if (c?.erro) return falar(c.erro, { mood: 'sad' });
   if (c) return executar(c);
   // fora os comandos diretos: com a inteligência ligada, o Gemini responde (e pode mandar comandos)
-  const especial = /\b(tchau|ate mais|modo conversa|fica ouvindo|para de ouvir|que horas)\b/.test(n);
+  const especial = /\b(tchau|ate mais|modo conversa|fica ouvindo|para de ouvir)\b/.test(n);
   if (S.ia && S.aqui && S.senha && !especial) return pensar(texto);
   const p = papo(texto);
   if (p) return falar(p.text, p);

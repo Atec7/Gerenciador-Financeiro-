@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       case 'ia-setup': return res.json({ ok: true, modelo: await IA.setup(b.key) });
       case 'conversa': {
         const [t, tv, ar] = await Promise.all([YT.telas().catch(() => ({ telas: [] })), ST.configured().catch(() => false), Gree.configured().catch(() => false)]);
-        return res.json({ ok: true, ...(await IA.conversar(b.texto, b.historico, { tv, ar, telas: t.telas, telaAtiva: t.ativa })) });
+        return res.json({ ok: true, ...(await IA.conversar(b.texto, b.historico, { tv, ar, telas: t.telas, telaAtiva: t.ativa, memoria: Array.isArray(b.memoria) ? b.memoria.slice(-30).map(x => String(x).slice(0, 120)) : [] })) });
       }
       case 'gree-setup': {
         if (!b.email || !b.password) throw new Error('Informe o e-mail e a senha do Gree+.');
