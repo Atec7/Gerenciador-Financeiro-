@@ -41,7 +41,9 @@ async function gerar(key, modelo, contents, sistema, json = true, busca = false)
     generationConfig: { temperature: json ? 0.8 : 1, maxOutputTokens: 1200, ...(json ? { responseMimeType: 'application/json' } : {}) },
     ...(busca ? { tools: [{ google_search: {} }] } : {})
   };
-  const r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let r;
+  try { r = await fetch(`${API}/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(18000) }); }
+  catch (e) { throw Object.assign(new Error(e.name === 'TimeoutError' ? 'demorou demais' : e.message), { status: 503 }); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error?.message?.slice(0, 160) || `HTTP ${r.status}`), { status: r.status });
   return (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
@@ -99,21 +101,24 @@ export async function conversar(texto, historico = [], ctx = {}) {
   const contents = hist.concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
   const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) });
   const ordem = ordenar([cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i));
-  let erro;
-  for (const m of ordem) {
+  let erro; const tentativas = [];
+  for (const m of ordem.slice(0, 4)) {
+    const t0 = Date.now();
     try {
       let raw;
       try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
       catch (e) {
+        tentativas.push(`${m} com busca: ${e.status} ${e.message.slice(0, 80)} (${Date.now() - t0} ms)`);
         if (![400, 429, 403].includes(e.status)) throw e;
         raw = await gerar(cfg.key, m, contents, sistema, false, false); // sem a busca do Google (modelo ou cota grátis sem busca)
         if (e.status === 400 && !cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
       }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
-      const r = interpretar(raw);
+      tentativas.push(`${m}: ok (${Date.now() - t0} ms)`);
+      const r = interpretar(raw); r.tentativas = tentativas;
       if (!r.fala && !r.comandos.length) throw Object.assign(new Error('resposta vazia'), { status: 500 });
       return r;
-    } catch (e) { erro = e; if (![404, 429, 500, 503].includes(e.status)) break; }
+    } catch (e) { erro = e; tentativas.push(`${m}: ${e.status} ${String(e.message).slice(0, 80)} (${Date.now() - t0} ms)`); if (![404, 429, 500, 503].includes(e.status)) break; }
   }
-  throw new Error(erro?.status === 429 ? 'Minha cota grátis de inteligência acabou por agora. Tente daqui a pouco.' : `Não consegui pensar agora (${erro?.message}).`);
+  throw Object.assign(new Error(erro?.status === 429 ? 'Minha cota grátis de inteligência acabou por agora. Tente daqui a pouco.' : `Não consegui pensar agora (${erro?.message}).`), { tentativas });
 }

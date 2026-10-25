@@ -55,9 +55,11 @@ export default async function handler(req, res) {
   if (acao === 'diag-ia') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
     const t0 = Date.now(); let r;
-    try { r = { ok: true, ...(await IA.conversar(String(q.texto || 'oi, tudo bem?'), [], {})) }; } catch (e) { r = { ok: false, erro: e.message }; }
+    try { r = { ok: true, ...(await IA.conversar(String(q.texto || 'oi, tudo bem?'), [], {})) }; } catch (e) { r = { ok: false, erro: e.message, tentativas: e.tentativas }; }
     const c = await (await import('./_lib/store.js')).load('ia').catch(() => null);
-    return res.json({ ...r, modelo: c?.modelo, semBusca: !!c?.semBusca, ms: Date.now() - t0 });
+    const out = { ...r, modelo: c?.modelo, modelos: c?.modelos, semBusca: !!c?.semBusca, ms: Date.now() - t0, em: new Date().toISOString() };
+    await fetch(`${FB}/assistente/diag-ia.json`, { method: 'PUT', body: JSON.stringify(out) }).catch(() => {});
+    return res.json(out);
   }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
