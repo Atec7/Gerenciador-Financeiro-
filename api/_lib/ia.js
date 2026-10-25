@@ -26,7 +26,7 @@ export async function setup(key) {
   const modelos = ordenar(await listarModelos(key));
   if (!modelos.length) throw new Error('Essa chave não tem nenhum modelo Gemini disponível.');
   const cfg = await escolherModelos({ key });
-  if (!cfg.v3) throw new Error('Nenhum modelo respondeu. A cota grátis pode estar esgotada; tente mais tarde.');
+  if (!cfg.v4) throw new Error('Nenhum modelo respondeu. A cota grátis pode estar esgotada; tente mais tarde.');
   return cfg.modelo;
 }
 /** testa os modelos da chave ao mesmo tempo e fica só com os que respondem rápido (alguns não têm cota grátis) */
@@ -35,8 +35,9 @@ async function escolherModelos(cfg) {
     const todos = ordenar(await listarModelos(cfg.key)).slice(0, 10);
     const teste = [{ role: 'user', parts: [{ text: 'Diga oi.' }] }];
     const res = await Promise.all(todos.map(async m => { const t0 = Date.now(); try { await gerar(cfg.key, m, teste, 'Responda em uma palavra.', false, false, 9000); return { m, ms: Date.now() - t0 }; } catch { return null; } }));
-    const ok = res.filter(Boolean).map(x => x.m);
-    if (ok.length) { cfg = { ...cfg, modelos: ok.slice(0, 6), modelo: ok[0], v3: true, semBusca: cfg.semBusca }; await save('ia', cfg); }
+    // para voz, rapidez importa: entre os que responderam, os mais rápidos primeiro (lite fica como reserva)
+    const ok = res.filter(Boolean).sort((a, b) => (/lite/.test(a.m) - /lite/.test(b.m)) || a.ms - b.ms).map(x => x.m);
+    if (ok.length) { cfg = { ...cfg, modelos: ok.slice(0, 6), modelo: ok[0], v4: true, semBusca: cfg.semBusca }; await save('ia', cfg); }
   } catch {}
   return cfg;
 }
@@ -63,7 +64,7 @@ const SISTEMA = ctx => `Você é o Hi Tec, o robozinho que mora na casa da pesso
 Seu jeito: caloroso, divertido, curioso e espontâneo, como um amigo brasileiro bem-humorado. Fale como gente fala no dia a dia ("tá", "né", "olha só", "putz", "que massa"), com naturalidade, sem soar como manual nem como atendente de telemarketing. Varie as palavras; não comece sempre igual; não repita "Em que posso ajudar?".
 Converse de verdade sobre qualquer assunto: piadas, futebol, música, novela, receitas, conselhos, curiosidades, desabafos, matemática, dúvidas do dia a dia. Tenha opinião leve quando pedirem, faça uma pergunta de volta de vez em quando para manter o papo, e lembre do que foi dito antes na conversa.
 Sua fala vira áudio: responda curto (1 a 3 frases; até 5 se a pessoa pedir explicação ou história). Nada de listas, markdown, asteriscos, emojis ou links. Escreva números e horários como se fala.
-Para coisas do momento (cotação, bolsa, dólar, clima, notícias, resultado de jogo, horários de funcionamento), use a busca do Google e responda com o dado real e atual; se mesmo assim não souber, diga com sinceridade.
+Você não tem acesso à internet: para coisas do momento (cotação exata, clima de agora, placar, notícia de hoje) não invente números; diga com leveza que não consegue ver isso agora e, se ajudar, fale o que costuma acontecer.
 Agora: ${ctx.agora} (horário de Brasília).${ctx.memoria?.length ? `\nO que você já sabe sobre a pessoa e a casa: ${ctx.memoria.join('; ')}.` : ''}
 Aparelhos: TV Samsung ${ctx.tv ? 'conectada' : 'não conectada'}; YouTube nas TVs: ${ctx.telas?.length ? ctx.telas.join(', ') + ` (ativa: ${ctx.telaAtiva})` : 'nenhuma'}; ar-condicionado ${ctx.ar ? 'conectado' : 'não conectado'}.
 
@@ -98,7 +99,7 @@ function interpretar(raw) {
 export async function conversar(texto, historico = [], ctx = {}) {
   let cfg = await load('ia');
   if (!cfg?.key) throw Object.assign(new Error('Ainda não tenho a inteligência ligada.'), { setup: 'ia' });
-  if (!cfg.v3) cfg = await escolherModelos(cfg);
+  if (!cfg.v4) cfg = await escolherModelos(cfg);
   // o histórico precisa alternar user/model e começar pelo usuário
   const hist = [];
   for (const h of historico.slice(-20)) {
@@ -110,7 +111,7 @@ export async function conversar(texto, historico = [], ctx = {}) {
   if (hist.length && hist[hist.length - 1].role === 'user') hist.pop();
   const contents = hist.concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
   const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) });
-  const ordem = ordenar([cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i));
+  const ordem = [cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i); // já vem na ordem dos mais rápidos
   let erro; const tentativas = [], inicio = Date.now();
   const anota = x => { tentativas.push(x); try { ctx.onLog?.(tentativas); } catch {} };
   for (const m of ordem.slice(0, 4)) {
@@ -118,11 +119,11 @@ export async function conversar(texto, historico = [], ctx = {}) {
     const t0 = Date.now();
     try {
       let raw;
-      try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
+      try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.busca === true, 9000); }
       catch (e) {
         anota(`${m} com busca: ${e.status} ${e.message.slice(0, 80)} (${Date.now() - t0} ms)`);
         if (![400, 429, 403].includes(e.status)) throw e;
-        raw = await gerar(cfg.key, m, contents, sistema, false, false); // sem a busca do Google (modelo ou cota grátis sem busca)
+        raw = await gerar(cfg.key, m, contents, sistema, false, false, 9000); // sem a busca do Google (modelo ou cota grátis sem busca)
         if ([400, 429, 403].includes(e.status) && !cfg.semBusca) { cfg = { ...cfg, semBusca: true }; await save('ia', cfg); } // sem cota/suporte de busca: não tenta mais
       }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
