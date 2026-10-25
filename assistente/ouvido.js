@@ -135,13 +135,14 @@ const Ouvido = (() => {
     const i = w.findIndex(x => NOME.test(x));
     return i >= 0 && (i <= 1 || i >= w.length - 2);
   }
-  let falhasSeguidas = 0, ultimaReg = 0;
+  let falhasSeguidas = 0, ultimaReg = 0, ultimoOuvido = 0;
   function iniciarWake() {
     if (!st.ativo || st.pausado || !st.wakeOk || st.wake) return;
     try {
       const r = st.wake = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 3;
       r.onresult = e => {
-        falhasSeguidas = 0;
+        falhasSeguidas = 0; st.bloqueado = false;
+        if (Date.now() - ultimoOuvido > 15000) { ultimoOuvido = Date.now(); try { const ult = e.results[e.results.length - 1][0].transcript; reg('escutando:', ult.slice(-60)); } catch {} }
         for (let i = e.resultIndex || 0; i < e.results.length; i++) {
           for (const alt of Array.from(e.results[i])) {
             const t = alt.transcript.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -151,7 +152,8 @@ const Ouvido = (() => {
       };
       r.onerror = e => {
         if (Date.now() - ultimaReg > 20000) { reg('erro do reconhecimento:', e.error); ultimaReg = Date.now(); }
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') st.wakeOk = false;
+        // "not-allowed" no Android aparece quando a tela apaga ou o app sai da frente: não desiste, tenta de novo quando voltar
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { st.bloqueado = true; falhasSeguidas += 3; }
         if (e.error === 'audio-capture') {
           // microfone ocupado pela escuta das palmas: larga as palmas e fica só com o nome
           if (st.stream) { st.soNome = true; fecharMic(); reg('conflito de microfone: passando para modo nome'); } else falhasSeguidas++;
@@ -160,7 +162,7 @@ const Ouvido = (() => {
       };
       r.onend = () => {
         if (st.wake === r) st.wake = null;
-        if (st.ativo && !st.pausado && st.wakeOk) setTimeout(iniciarWake, Math.min(5000, 250 + falhasSeguidas * 700));
+        if (st.ativo && !st.pausado && st.wakeOk && !(st.bloqueado && document.hidden)) setTimeout(iniciarWake, Math.min(5000, 250 + falhasSeguidas * 700));
       };
       r.start();
     } catch (e) { st.wake = null; reg('não iniciou:', e.message); setTimeout(iniciarWake, 1500); }
@@ -170,7 +172,9 @@ const Ouvido = (() => {
   /* tela acesa enquanto o ouvido está ligado */
   async function manterTelaAcesa() { try { st.lock = await navigator.wakeLock?.request('screen'); } catch {} }
   function soltarTela() { try { st.lock?.release(); } catch {} st.lock = null; }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && st.ativo) { manterTelaAcesa(); if (st.ctx?.state === 'suspended') st.ctx.resume(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && st.ativo) { manterTelaAcesa(); if (st.ctx?.state === 'suspended') st.ctx.resume(); falhasSeguidas = 0; setTimeout(iniciarWake, 500); reg('voltou para a tela'); } });
+  // qualquer toque na tela também destrava o reconhecimento, se o Android tiver bloqueado
+  document.addEventListener('pointerdown', () => { if (st.ativo && !st.pausado && st.bloqueado) { st.bloqueado = false; falhasSeguidas = 0; pararWake(); setTimeout(iniciarWake, 300); } }, true);
 
   return {
     ligar, desligar, pausar, retomar,

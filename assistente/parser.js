@@ -14,7 +14,7 @@
 
   function parse(text) {
     // erros comuns do reconhecimento de voz: "aro 20" / "arno 20" = "ar no 20"
-    const raw = norm(text).replace(/\b(aro|arno|aron)\b/g, 'ar no').replace(/\bar(\d{2})\b/g, 'ar $1');
+    const raw = norm(text).replace(/\b(aro|arno|aron)\b/g, 'ar no').replace(/^(?:(?:poe|coloca|bota|deixa) (?:o )?)?(?:ah|a|ha) no (\d{2})\b/, 'ar no $1').replace(/\bar(\d{2})\b/g, 'ar $1');
     const t = words2num(raw);
     const num = (re) => { const m = t.match(re); return m ? +m[1] : null; };
     const has = re => re.test(t);

@@ -174,6 +174,7 @@ function descreve(alvo, e) {
   return e.ligado ? `O ar está ligado em ${e.temperatura} graus${modo ? `, no modo ${modo}` : ''}${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.` : `O ar está desligado${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.`;
 }
 async function executar(c) {
+  if (c.alvo === 'ar') S.ultimoAr = Date.now();
   REG.add('comando', c, 'youtube vinculado:', !!S.youtube, 'tv:', !!S.tv);
   if (!S.aqui) return falar(S.apiUrl ? 'Para comandar a TV e o ar, me abra pelo endereço do meu servidor.' : 'Ainda não tenho servidor. Quer que eu te ajude a me configurar? É só dizer: me ajuda a configurar.', { mood: 'sad' });
   if (!S.senha) return iniciarPasso('senha');
@@ -401,6 +402,8 @@ async function responder(texto, viaBotao = false) {
   if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
   if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return buscarTVs();
   let c = Comandos.parse(texto);
+  // só um número logo depois de mexer no ar ("23", "24 graus") = temperatura do ar
+  if (!c && S.ultimoAr && Date.now() - S.ultimoAr < 180000) { const m = n.match(/^(?:no |em |pra |para )?(\d{2})(?: graus?)?$/); if (m && +m[1] >= 16 && +m[1] <= 30) c = { alvo: 'ar', acao: 'temperatura', valor: +m[1] }; }
   if (!c && Voz.alternativas?.length) { for (const a of Voz.alternativas) { const ca = Comandos.parse(a); if (ca && !ca.erro) { REG.add('usei alternativa', a); texto = a; c = ca; break; } } }
   Voz.alternativas = [];
   REG.add('ouvi', texto, '->', c || 'sem comando', 'IA:', !!S.ia);

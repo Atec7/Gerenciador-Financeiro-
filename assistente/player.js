@@ -2,7 +2,7 @@
    Player.tocar(video) · pausar() · continuar() · proximo() · fechar() · ativo / tocando
    Se um vídeo não puder ser embutido (erro 101/150), tenta a próxima opção da busca. */
 /* registro do que acontece (vai para o servidor, para diagnóstico) */
-const VERSAO_APP = 'v21';
+const VERSAO_APP = 'v22';
 const REG = { linhas: [], envio: null, add(...x) { const l = `${new Date().toLocaleTimeString('pt-BR')} ${x.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(' ')}`; this.linhas.push(l); try { console.log('[reg]', l); } catch {} clearTimeout(this.envio); this.envio = setTimeout(() => this.enviar && this.enviar(), 1500); } };
 window.addEventListener('error', e => REG.add('ERRO JS', e.message, (e.filename || '').split('/').pop(), e.lineno));
 window.addEventListener('unhandledrejection', e => REG.add('ERRO promessa', String(e.reason?.message || e.reason)));
