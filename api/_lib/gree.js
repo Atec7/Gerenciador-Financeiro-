@@ -215,17 +215,29 @@ export function packFor(c) {
   return { t: 'cmd', opt: o, p };
 }
 
+/* aparelhos pela nuvem querem um ajuste por vez: modo primeiro, temperatura junto da unidade, ligar por último */
+function sequencia(pack) {
+  const par = Object.fromEntries(pack.opt.map((k, i) => [k, pack.p[i]])), out = [];
+  if ('Mod' in par) out.push({ t: 'cmd', opt: ['Mod'], p: [par.Mod] });
+  if ('SetTem' in par) out.push({ t: 'cmd', opt: ['SetTem', 'TemUn'], p: [par.SetTem, par.TemUn ?? 0] });
+  if ('WdSpd' in par) out.push({ t: 'cmd', opt: ['WdSpd'], p: [par.WdSpd] });
+  if ('Pow' in par) out.push({ t: 'cmd', opt: ['Pow'], p: [par.Pow] });
+  return out;
+}
 export async function command(c) {
   return withLogin(async (cfg, dev) => {
-    const r = await mqttSession(cfg, dev, async api => {
-      await api.send(packFor(c));
-      return api.next(x => x.t === 'res' || x.t === 'dat', 5000);
+    const passos = sequencia(packFor(c));
+    const enviar = cipher => mqttSession(cfg, dev, async api => {
+      let respostas = 0;
+      for (const pk of passos) { await api.send(pk, cipher); if (await api.next(x => x.t === 'res' || x.t === 'dat', 3000)) respostas++; }
+      return respostas;
     });
-    if (!r && !cfg.cipher) {
+    let ok = await enviar(cfg.cipher || 1);
+    if (!ok && !cfg.cipher) {
       // nenhuma resposta e cifra ainda desconhecida: descobre a cifra lendo o estado e reenvia
       const st = await readState(cfg, dev);
       if (!st) throw new Error('O ar não respondeu pela nuvem da Gree. Ele liga pelo app Gree+?');
-      await mqttSession(cfg, dev, async api => { await api.send(packFor(c)); return api.next(x => x.t === 'res', 4000); });
+      ok = await enviar(cfg.cipher);
     }
     return dev.nome;
   });
