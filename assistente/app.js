@@ -76,11 +76,30 @@ const Voz = {
       Ouvido.pausar(); // solta o microfone para o reconhecimento de voz
       try { speechSynthesis.cancel(); } catch {}
       if (estavaAtento) await wait(350); // o celular leva um instante para liberar o microfone
-      const rec = this.rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-      let final = '', interim = '';
-      rec.onstart = () => { this.ouvindo = true; Robot.mood('listening'); $('#mic').classList.add('listening'); $('#heard').textContent = 'Estou ouvindo…'; };
+      // escuta contínua: só termina depois de uma pausa de verdade (o modo simples cortava a frase no meio)
+      const rec = this.rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 3;
+      let final = '', interim = '', fimTimer = null, alternativas = [];
+      const fechar = ms => { clearTimeout(fimTimer); fimTimer = setTimeout(() => { try { rec.stop(); } catch {} }, ms); };
+      rec.onstart = () => { this.ouvindo = true; Robot.mood('listening'); $('#mic').classList.add('listening'); $('#heard').textContent = 'Estou ouvindo…'; fechar(7000); };
       rec._resolve = resolve;
-      rec.onresult = e => { if (rec !== this.rec) return; interim = ''; for (const r of e.results) r.isFinal ? (final = r[0].transcript) : (interim += r[0].transcript); $('#heard').textContent = `“${final || interim}”`; };
+      rec.onresult = e => {
+        if (rec !== this.rec) return;
+        // junta os trechos finais (alguns Android repetem o trecho anterior acumulado: aí substitui)
+        const partes = []; interim = ''; alternativas = [];
+        for (const r of e.results) {
+          const tx = r[0].transcript.trim();
+          if (!r.isFinal) { interim += ' ' + tx; continue; }
+          const ult = partes[partes.length - 1];
+          if (ult && norm(tx).startsWith(norm(ult))) partes[partes.length - 1] = tx; else if (!ult || !norm(ult).endsWith(norm(tx))) partes.push(tx);
+          alternativas = Array.from(r).slice(1).map(a => a.transcript.trim());
+        }
+        final = partes.join(' ').trim(); interim = interim.trim();
+        $('#heard').textContent = `“${[final, interim].filter(Boolean).join(' ')}”`;
+        fechar(interim ? 1800 : 1200); // espera a pessoa terminar a frase
+      };
+      rec._alts = () => alternativas;
+      rec.onaudioend = () => clearTimeout(fimTimer);
+      setTimeout(() => { try { rec.stop(); } catch {} }, 15000); // limite de segurança
       rec.onerror = e => {
         rec._erro = e.error;
         const msg = {
@@ -98,7 +117,8 @@ const Voz = {
         if (rec._erro === 'audio-capture' && tentativa === 0) { await wait(800); return resolve(await this.listen(1)); }
         Ouvido.retomar();
         if (!final && !interim && !rec._erro) $('#heard').textContent = '';
-        resolve((final || interim).trim());
+        clearTimeout(fimTimer); this.alternativas = alternativas;
+        resolve([final, interim].filter(Boolean).join(' ').trim());
       };
       try { rec.start(); } catch (e) { aviso(`Não consegui começar a ouvir (${e.message}). Toque em mim de novo.`); Ouvido.retomar(); resolve(''); }
     });
@@ -180,7 +200,7 @@ async function executar(c) {
     if (c.acao === 'tela') { const r = await api({ acao: 'cmd', cmd: c }); S.telaAtiva = r.nome; return falar(`Pronto, agora estou usando a ${nomeTV(r.nome)}.`, { mood: 'happy' }); }
     const r = await api({ acao: 'cmd', cmd: c });
     if (c.acao === 'yt' && c.valor === 'pausar' || c.acao === 'desligar' || c.acao === 'yt' && c.valor === 'continuar') pararDancaTV(c.valor === 'continuar' ? 'continuar' : 'parar');
-    return falar(Comandos.reply(c), { mood: 'happy' });
+    return falar(Comandos.reply(r.valor != null && c.alvo === 'ar' ? { ...c, acao: 'temperatura', valor: r.valor } : c), { mood: 'happy' });
   } catch (e) {
     Robot.mood('idle');
     if (e.setup === 'tv') return falar(`${e.message} Quer que eu te ajude a conectar a TV agora?`, { mood: 'sad', listen: true }).then(() => { pendente = 'tv1'; });
@@ -380,7 +400,9 @@ async function responder(texto, viaBotao = false) {
   if (/^(danca|dance|dancar|danca pra mim|bora dancar|vamos dancar|mexe o esqueleto)\b/.test(n)) { Robot.dance(true, 118); setTimeout(() => { if (!S.musicaTV && !Ouvido.musica) Robot.dance(false); }, 15000); return falar('Solta o som! Olha eu dançando!', { mood: 'happy' }); }
   if (/\b(para|pare|chega) de dancar\b/.test(n)) { pararDancaTV('parar'); Robot.dance(false); return falar('Ufa, cansei! Parei de dançar.'); }
   if (/\b(procura|procurar|busca|buscar|acha|achar|encontra|encontrar|lista|listar|quais|que) (as |uma |alguma )?(tvs?|televis)|\btvs? (vinculadas|conectadas|da casa|na rede)\b/.test(n)) return buscarTVs();
-  const c = Comandos.parse(texto);
+  let c = Comandos.parse(texto);
+  if (!c && Voz.alternativas?.length) { for (const a of Voz.alternativas) { const ca = Comandos.parse(a); if (ca && !ca.erro) { REG.add('usei alternativa', a); texto = a; c = ca; break; } } }
+  Voz.alternativas = [];
   REG.add('ouvi', texto, '->', c || 'sem comando', 'IA:', !!S.ia);
   if (c?.erro) return falar(c.erro, { mood: 'sad' });
   if (c) return executar(c);

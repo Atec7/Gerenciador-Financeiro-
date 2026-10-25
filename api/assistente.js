@@ -149,7 +149,7 @@ export default async function handler(req, res) {
           return res.json({ ok: true });
         }
         if (c.alvo === 'tv') return res.json({ ok: true, nome: await ST.command(c) });
-        if (c.alvo === 'ar') return res.json({ ok: true, nome: await Gree.command(c) });
+        if (c.alvo === 'ar') { const r = await Gree.command(c); return res.json({ ok: true, nome: r.nome, valor: r.valor }); }
         throw new Error('Aparelho desconhecido.');
       }
       case 'estado': {

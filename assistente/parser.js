@@ -13,7 +13,8 @@
     .replace(/\b(zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|cem)\b/g, m => String(NUM[m]));
 
   function parse(text) {
-    const raw = norm(text);
+    // erros comuns do reconhecimento de voz: "aro 20" / "arno 20" = "ar no 20"
+    const raw = norm(text).replace(/\b(aro|arno|aron)\b/g, 'ar no').replace(/\bar(\d{2})\b/g, 'ar $1');
     const t = words2num(raw);
     const num = (re) => { const m = t.match(re); return m ? +m[1] : null; };
     const has = re => re.test(t);
@@ -85,13 +86,17 @@
     }
 
     // ── Ar-condicionado ──
-    const temp = num(/\b(\d{2}) ?(?:graus|grau|°|o)\b/) ?? (ar ? num(/\b(?:em|para|pra|no|na|a) (\d{2})\b/) : null);
-    const isAr = ar || temp != null || /\b(esfria|esfriar|gelar|resfriar|aquecer|esquentar|ventilacao|ventilar)\b/.test(t);
+    const temp = num(/\b(\d{2}) ?(?:graus|grau|°|o)\b/) ?? (ar || /\btemperatura\b/.test(t) ? num(/\b(?:em|para|pra|no|na|a|ar|temperatura) (\d{2})\b/) : null);
+    const isAr = ar || temp != null || /\b(temperatura|esfria|esfriar|gelar|resfriar|aquecer|esquentar|ventilacao|ventilar)\b/.test(t);
     if (isAr) {
       if (estado) return { alvo: 'ar', estado: true };
       if (desligar) return { alvo: 'ar', acao: 'desligar' };
       if (temp != null && temp >= 16 && temp <= 30) return { alvo: 'ar', acao: 'temperatura', valor: temp };
       if (temp != null) return { erro: 'A temperatura do ar vai de 16 a 30 graus.' };
+      // subir/baixar um pouco: "aumenta o ar", "abaixa a temperatura", "deixa mais frio"
+      const vezes = num(/\b(\d) graus?\b/) || 1;
+      if (has(/\b(aumenta|aumentar|sobe|subir|levanta)\b/) || has(/\bmais quente\b/)) return { alvo: 'ar', acao: 'temperatura+', vezes };
+      if (has(/\b(abaixa|abaixar|baixa|baixar|diminui|diminuir|desce|descer)\b/) || has(/\bmais frio\b/)) return { alvo: 'ar', acao: 'temperatura-', vezes };
       if (has(/\b(ventilacao|velocidade|vento)\b/)) {
         const v = has(/\b(alta|maxima|forte|alto)\b/) ? 'alta' : has(/\b(baixa|minima|fraca|baixo)\b/) ? 'baixa' : has(/\b(media|medio)\b/) ? 'media' : has(/\bauto/) ? 'auto' : null;
         if (v) return { alvo: 'ar', acao: 'ventilacao', valor: v };
@@ -99,7 +104,7 @@
       const modo = has(/\b(frio|gelar|esfriar|esfria|resfriar|refrigerar)\b/) ? 'frio' : has(/\b(quente|aquecer|esquentar|aquecimento|calor)\b/) ? 'quente'
         : has(/\b(desumidificar|seco|umidade)\b/) ? 'seco' : has(/\b(ventilar|so ventilar|modo ventilador|ventilador)\b/) ? 'ventilar' : has(/\bmodo auto/) ? 'auto' : null;
       if (modo) return { alvo: 'ar', acao: 'modo', valor: modo };
-      if (ligar || ar) return { alvo: 'ar', acao: 'ligar' };
+      if (ligar) return { alvo: 'ar', acao: 'ligar' };
     }
     return null;
   }

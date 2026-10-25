@@ -215,31 +215,38 @@ export function packFor(c) {
   return { t: 'cmd', opt: o, p };
 }
 
-/* aparelhos pela nuvem querem um ajuste por vez: modo primeiro, temperatura junto da unidade, ligar por último */
-function sequencia(pack) {
-  const par = Object.fromEntries(pack.opt.map((k, i) => [k, pack.p[i]])), out = [];
-  if ('Mod' in par) out.push({ t: 'cmd', opt: ['Mod'], p: [par.Mod] });
-  if ('SetTem' in par) out.push({ t: 'cmd', opt: ['SetTem', 'TemUn'], p: [par.SetTem, par.TemUn ?? 0] });
-  if ('WdSpd' in par) out.push({ t: 'cmd', opt: ['WdSpd'], p: [par.WdSpd] });
-  if ('Pow' in par) out.push({ t: 'cmd', opt: ['Pow'], p: [par.Pow] });
-  return out;
-}
+/* aparelhos pela nuvem querem um ajuste por vez. Importante: mandar "ligar" com o ar já ligado faz ele voltar
+   para a temperatura anterior; então lê o estado antes, liga primeiro (só se estiver desligado) e depois ajusta. */
+const COLS_ESTADO = ['Pow', 'Mod', 'SetTem', 'TemSen', 'WdSpd'];
 export async function command(c) {
   return withLogin(async (cfg, dev) => {
-    const passos = sequencia(packFor(c));
-    const enviar = cipher => mqttSession(cfg, dev, async api => {
-      let respostas = 0;
-      for (const pk of passos) { await api.send(pk, cipher); if (await api.next(x => x.t === 'res' || x.t === 'dat', 3000)) respostas++; }
-      return respostas;
+    const run = cipher => mqttSession(cfg, dev, async api => {
+      const ler = async () => { await api.send({ t: 'status', cols: COLS_ESTADO }, cipher); const d = await api.next(x => x.t === 'dat' && Array.isArray(x.cols), 5000); return d ? datToObj(d) : null; };
+      const passo = async (opt, p) => { await api.send({ t: 'cmd', opt, p }, cipher); return api.next(x => x.t === 'res', 3000); };
+      const st = await ler();
+      if (!st) return null;
+      let valor = null;
+      if (c.acao === 'desligar') { await passo(['Pow'], [0]); return { ok: true }; }
+      if (st.Pow !== 1) { await passo(['Pow'], [1]); await new Promise(r => setTimeout(r, 1500)); }
+      if (c.acao === 'ligar') return { ok: true };
+      if (c.acao === 'temperatura' || c.acao === 'temperatura+' || c.acao === 'temperatura-') {
+        const base = Number(st.SetTem) || 24, passoT = Math.max(1, Math.min(5, Number(c.vezes) || 1));
+        valor = c.acao === 'temperatura' ? Number(c.valor) : base + (c.acao === 'temperatura+' ? passoT : -passoT);
+        valor = Math.max(16, Math.min(30, Math.round(valor)));
+        await passo(['SetTem', 'TemUn', 'TemRec'], [valor, 0, 0]);
+      } else if (c.acao === 'modo') {
+        if (!(c.valor in MODOS)) throw new Error('Modo desconhecido.');
+        await passo(['Mod'], [MODOS[c.valor]]);
+      } else if (c.acao === 'ventilacao') {
+        if (!(c.valor in VELOC)) throw new Error('Velocidade desconhecida.');
+        await passo(['WdSpd'], [VELOC[c.valor]]);
+      } else throw new Error('Comando de ar desconhecido.');
+      return { ok: true, valor };
     });
-    let ok = await enviar(cfg.cipher || 1);
-    if (!ok && !cfg.cipher) {
-      // nenhuma resposta e cifra ainda desconhecida: descobre a cifra lendo o estado e reenvia
-      const st = await readState(cfg, dev);
-      if (!st) throw new Error('O ar não respondeu pela nuvem da Gree. Ele liga pelo app Gree+?');
-      ok = await enviar(cfg.cipher);
-    }
-    return dev.nome;
+    let r = await run(cfg.cipher || 1);
+    if (!r && !cfg.cipher) { const st = await readState(cfg, dev); if (st) r = await run(cfg.cipher); }
+    if (!r) throw new Error('O ar não respondeu pela nuvem da Gree. Ele está ligado na tomada e no Wi-Fi?');
+    return { nome: dev.nome, valor: r.valor };
   });
 }
 export async function status() {
