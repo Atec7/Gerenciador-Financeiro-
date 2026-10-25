@@ -762,3 +762,17 @@ const inicio = (async function iniciar() {
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 $('#versao-app') && ($('#versao-app').textContent = 'Versão do robô: ' + VERSAO_APP);
+
+/* teste do ar: o servidor escuta a nuvem da Gree enquanto a pessoa mexe no ar pelo Gree+ (resultado fica guardado para análise) */
+$('#ar-teste') && ($('#ar-teste').onclick = async () => {
+  const st = $('#st-ar-teste'), b = $('#ar-teste');
+  if (!S.senha) { st.textContent = 'Primeiro salve a senha do assistente.'; return; }
+  b.disabled = true; st.textContent = 'Escutando por 45 segundos… agora abra o Gree+ e ligue/desligue o ar.';
+  Voz.say('Estou escutando. Agora abra o app Gree Mais e ligue e desligue o ar duas vezes.');
+  try {
+    const r = await fetch(`/api/assistente?acao=diag-ar&ouvir=1&senha=${encodeURIComponent(S.senha)}`, { cache: 'no-store' }).then(x => x.json());
+    const msgs = (r.log || []).filter(l => / msg /.test(l) && !/request\/MAC/.test(l)).length;
+    st.textContent = `Pronto! Teste guardado (${(r.log || []).length} linhas, ${msgs} respostas do ar). Pode avisar o Claude.`;
+  } catch (e) { st.textContent = 'O teste terminou, mas não recebi a resposta aqui. Ele ficou guardado mesmo assim — pode avisar o Claude.'; }
+  b.disabled = false;
+});

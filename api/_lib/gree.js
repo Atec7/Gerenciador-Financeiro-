@@ -114,7 +114,7 @@ const decodePack = (m, key) => {
 
 /** Uma sessão MQTT curta: conecta, publica um ou mais pedidos e espera as respostas.
     Falha de verdade se não conseguir conectar (antes, um comando "sumia" sem aviso). */
-function mqttSession(cfg, dev, run, { host, log, max = 22000 } = {}) {
+function mqttSession(cfg, dev, run, { host, log, max = 22000, extra = [] } = {}) {
   return new Promise((resolve, reject) => {
     const h = process.env.GREE_MQTT_HOST || host || cfg.mqttHost || REGIOES[cfg.regiao][1], parent = parentMac(dev.mac);
     const t0 = Date.now(), L = (...a) => log?.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${a.join(' ')}`);
@@ -125,7 +125,7 @@ function mqttSession(cfg, dev, run, { host, log, max = 22000 } = {}) {
     let done = false, connected = false;
     const waiters = [];
     const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); try { client.end(true); } catch {} err ? reject(err) : resolve(val); };
-    const timer = setTimeout(() => finish(connected ? new Error('timeout') : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), max);
+    const timer = setTimeout(() => finish(connected ? (log ? null : new Error('timeout')) : Object.assign(new Error(`Não consegui conectar na nuvem da Gree (${h}).`), { noConnect: true })), max);
     client.on('error', e => { L('erro', e.message); const auth = /auth|Not authorized|bad user|password/i.test(e.message); finish(Object.assign(new Error(auth ? 'auth' : `Nuvem da Gree: ${e.message}`), { auth, noConnect: !connected })); });
     client.on('close', () => { if (!connected) L('conexão fechada antes de conectar'); else if (!done) L('conexão fechada pelo servidor'); });
     if (log) client.on('packetreceive', pk => { if (['puback', 'suback', 'connack'].includes(pk.cmd)) L('pacote', pk.cmd, pk.cmd === 'connack' ? `rc=${pk.returnCode ?? pk.reasonCode}` : `id=${pk.messageId}`); });
@@ -138,7 +138,7 @@ function mqttSession(cfg, dev, run, { host, log, max = 22000 } = {}) {
     });
     client.on('connect', () => {
       connected = true; L('conectado em', h);
-      const topics = log ? [`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`, `response/${parent}`, `status/${parent}`, `request/${parent}`, `response/${dev.mac}/#`]
+      const topics = log ? [`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`, `response/${parent}`, `status/${parent}`, `request/${parent}`, `response/${dev.mac}/#`, ...extra]
                          : [`response/${parent}/#`, `status/${parent}/#`, `connect/${parent}`];
       const sub = t => new Promise(r => client.subscribe(t, { qos: 1 }, (err, g) => r(err ? `ERRO(${err.message})` : g?.[0]?.qos === 128 ? 'RECUSADA' : 'ok')));
       (async () => {
@@ -242,14 +242,22 @@ export async function diag({ testar = false, servidor = 0, ouvir = false } = {})
   let cfg = await load('gree');
   if (!cfg?.uid) return { ...out, erro: 'ar não configurado (ou senha diferente da usada na configuração)' };
   if (ouvir) {
-    // só escuta o canal do ar por 40 s, enquanto a pessoa liga/desliga pelo app Gree+
+    // escuta o canal do ar por ~45 s (a pessoa mexe no ar pelo app Gree+ usando 4G) e testa variações do pedido de estado
     const log = [];
     try {
       const base = REGIOES[cfg.regiao][0], { uid, token } = await login(base, cfg.email, cfg.password);
       cfg = { ...cfg, uid, token }; await save('gree', cfg);
-      await mqttSession(cfg, cfg.devs[0], api => new Promise(r => setTimeout(r, 40000)), { log, max: 45000 });
+      const dev = cfg.devs[0], parent = parentMac(dev.mac);
+      await mqttSession(cfg, dev, async api => {
+        const variantes = [
+          [{ t: 'status', mac: dev.mac, cols: ['Pow', 'Mod', 'SetTem'] }, 1], [{ t: 'status', mac: dev.mac, cols: ['Pow', 'Mod', 'SetTem'] }, 2],
+          [{ t: 'status', mac: dev.mac, cols: ['Pow', 'Mod', 'SetTem', 'hid'], uid: cfg.uid }, 1],
+        ];
+        for (const [pk, ci] of variantes) { await new Promise(r => setTimeout(r, 4000)); await api.send(pk, ci); }
+        await new Promise(r => setTimeout(r, 30000));
+      }, { log, max: 50000, extra: [`+/${parent}`, `+/${parent}/#`, `${parent}/#`] });
     } catch (e) { log.push(`erro: ${e.message}`); }
-    return { modo: 'ouvir 40 s', log };
+    return { modo: 'ouvir 45 s', log };
   }
   out.regiao = cfg.regiao; out.cifraSalva = cfg.cipher || null;
   out.aparelhos = (cfg.devs || []).map(d => ({ nome: d.nome, online: d.online, macTam: d.mac.length, macFim00: d.mac.endsWith('00'), chaveTam: d.key.length }));
