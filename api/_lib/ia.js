@@ -16,7 +16,7 @@ async function listarModelos(key) {
 function ordenar(nomes) {
   const ok = nomes.filter(n => /gemini/.test(n) && /flash/.test(n) && !/(image|tts|audio|live|embedding|thinking-exp|native)/.test(n));
   const ver = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
-  const peso = n => (/-latest$/.test(n) ? 50 : 0) + ver(n) * 10 - (/lite/.test(n) ? 5 : 0) - (/preview|exp/.test(n) ? 3 : 0);
+  const peso = n => (/-latest$/.test(n) ? 8 : 0) + ver(n) * 10 - (/lite/.test(n) ? 60 : 0) - (/preview|exp/.test(n) ? 3 : 0); // lite só como reserva: responde pior
   return ok.sort((a, b) => peso(b) - peso(a));
 }
 
@@ -84,8 +84,9 @@ function interpretar(raw) {
 
 /** conversa: devolve { fala, comandos, musica, lembrar } */
 export async function conversar(texto, historico = [], ctx = {}) {
-  const cfg = await load('ia');
+  let cfg = await load('ia');
   if (!cfg?.key) throw Object.assign(new Error('Ainda não tenho a inteligência ligada.'), { setup: 'ia' });
+  if (!cfg.v2) { try { const todos = ordenar(await listarModelos(cfg.key)); if (todos.length) { cfg = { ...cfg, modelos: todos.slice(0, 8), modelo: todos[0], v2: true }; await save('ia', cfg); } } catch {} }
   // o histórico precisa alternar user/model e começar pelo usuário
   const hist = [];
   for (const h of historico.slice(-20)) {
@@ -97,16 +98,16 @@ export async function conversar(texto, historico = [], ctx = {}) {
   if (hist.length && hist[hist.length - 1].role === 'user') hist.pop();
   const contents = hist.concat([{ role: 'user', parts: [{ text: String(texto).slice(0, 800) }] }]);
   const sistema = SISTEMA({ ...ctx, agora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) });
-  const ordem = [cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i);
+  const ordem = ordenar([cfg.modelo, ...(cfg.modelos || [])].filter((m, i, a) => m && a.indexOf(m) === i));
   let erro;
   for (const m of ordem) {
     try {
       let raw;
       try { raw = await gerar(cfg.key, m, contents, sistema, false, cfg.semBusca !== true); }
       catch (e) {
-        if (e.status !== 400) throw e;
-        raw = await gerar(cfg.key, m, contents, sistema, false, false); // modelo sem busca do Google
-        if (!cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
+        if (![400, 429, 403].includes(e.status)) throw e;
+        raw = await gerar(cfg.key, m, contents, sistema, false, false); // sem a busca do Google (modelo ou cota grátis sem busca)
+        if (e.status === 400 && !cfg.semBusca) await save('ia', { ...cfg, semBusca: true });
       }
       if (m !== cfg.modelo) await save('ia', { ...cfg, modelo: m });
       const r = interpretar(raw);
