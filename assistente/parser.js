@@ -49,8 +49,8 @@
         return { alvo: 'tv', acao: 'youtube', valor: q, ...(naTV ? { naTV: true } : local ? { local: true } : {}), musica: !/\b(videos? de|receita|tutorial|aula|noticia|jornal|desenho|filme|documentario|como fazer)\b/.test(raw) };
     }
     // ── TV: tocar/pausar/próximo ──
-    if (/^(pausa|pausar|pause|pausa o video|pausa a musica|para o video|para a musica)$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'pausar' };
-    if (/^(continua|continuar|despausa|despausar|play|volta a tocar|retoma|solta o video|da play)$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'continuar' };
+    if (/^(pausa|pausar|pause|para|parar|da pause|da um pause)( (o|a|na|no))? ?(video|musica|filme|serie|netflix|youtube|tv|globoplay|prime|disney|max|episodio)?$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'pausar' };
+    if (/^(continua|continuar|despausa|despausar|play|da play|volta a tocar|retoma|retomar|solta)( (o|a|na|no))? ?(video|musica|filme|serie|netflix|youtube|tv|globoplay|prime|disney|max|episodio)?$/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'continuar' };
     if (/\b(proximo video|proxima musica|proximo clipe|pula|pula a musica|pula o video|pula essa|pular|passa (a musica|o video|pra proxima))\b/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'proximo' };
     if (/\b(video anterior|musica anterior|volta a musica|volta o video)\b/.test(t)) return { alvo: 'tv', acao: 'yt', valor: 'anterior' };
     // ── TV: controle remoto por voz (frases curtas) ──

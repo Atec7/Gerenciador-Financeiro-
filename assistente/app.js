@@ -357,7 +357,7 @@ async function ligarOuvido(avisar = false) {
   const ok = await Ouvido.ligar();
   $('#btn-ear').classList.toggle('active', ok);
   if (!ok) { if (avisar) falar('Não consegui usar o microfone. Libere o microfone para este site nas configurações do navegador.', { mood: 'sad' }); return; }
-  $('#heard').textContent = 'Diga “Sete” ou bata palmas duas vezes para me chamar.';
+  $('#heard').textContent = Ouvido.soNome ? 'Diga “Sete” para me chamar.' : Ouvido.ouveNome ? 'Diga “Sete” ou bata palmas duas vezes para me chamar.' : 'Bata palmas duas vezes para me chamar.';
 }
 
 /* ── entrada: tudo que o usuário fala, digita ou toca passa por aqui ── */
@@ -748,7 +748,7 @@ $('#type-form').onsubmit = async e => { e.preventDefault(); Voz.cancel(); const 
 document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { S.started = true; responder(b.dataset.q); });
 $('#btn-ear').onclick = async () => {
   S.started = true; S.atento = !Ouvido.ativo; LS.set('as_atento', S.atento);
-  if (S.atento) { await ligarOuvido(true); if (Ouvido.ativo) falar(Ouvido.ouveNome ? 'Estou atento! Diga Sete ou bata palmas duas vezes para me chamar. Se tocar música, eu danço.' : 'Estou atento! Bata palmas duas vezes para me chamar. Se tocar música, eu danço.', { mood: 'happy' }); }
+  if (S.atento) { await ligarOuvido(true); if (Ouvido.ativo) falar(Ouvido.soNome ? 'Estou atento! Diga Sete para me chamar.' : Ouvido.ouveNome ? 'Estou atento! Diga Sete ou bata palmas duas vezes para me chamar. Se tocar música, eu danço.' : 'Estou atento! Bata palmas duas vezes para me chamar. Se tocar música, eu danço.', { mood: 'happy' }); }
   else { Ouvido.desligar(); $('#btn-ear').classList.remove('active'); Robot.dance(false); falar('Parei de prestar atenção. Toque em mim quando precisar.'); }
 };
 $('#btn-conv').onclick = () => { S.conversa = !S.conversa; syncConv(); S.started = true; falar(S.conversa ? 'Modo conversa ligado! Pode falar.' : 'Modo conversa desligado.', { mood: S.conversa ? 'happy' : 'idle' }); };
@@ -810,3 +810,13 @@ $('#ar-teste') && ($('#ar-teste').onclick = async () => {
   } catch (e) { st.textContent = 'O teste terminou, mas não recebi a resposta aqui. Ele ficou guardado mesmo assim — pode avisar o Claude.'; }
   b.disabled = false;
 });
+
+/* palmas ou nome (no Android o microfone só faz um dos dois) */
+if ($('#chamar-palmas')) {
+  $('#chamar-palmas').checked = localStorage.getItem('as_chamar') === 'palmas';
+  $('#chamar-palmas').onchange = async e => {
+    try { localStorage.setItem('as_chamar', e.target.checked ? 'palmas' : 'nome'); } catch {}
+    if (Ouvido.ativo) { Ouvido.desligar(); await ligarOuvido(); }
+    Voz.say(e.target.checked ? 'Combinado, me chame com duas palmas.' : 'Combinado, me chame pelo nome: Sete.');
+  };
+}

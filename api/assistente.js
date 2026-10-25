@@ -144,8 +144,11 @@ export default async function handler(req, res) {
           return res.json({ ok: true, nome: st || yt, smartthings: !!st, youtube: !!yt });
         }
         if (c.alvo === 'tv' && c.acao === 'yt') {
-          try { await YT.controle(c.valor); }
-          catch (e) { if (!e.setup || !['pausar', 'continuar'].includes(c.valor)) throw e; await ST.command({ acao: c.valor === 'pausar' ? 'pause' : 'play' }); }
+          // pausar/continuar: o controle da Samsung vale para qualquer app (Netflix, YouTube, Globoplay…); o do YouTube fica de reserva
+          const simples = ['pausar', 'continuar'].includes(c.valor);
+          let feito = false;
+          if (simples && await ST.configured().catch(() => false)) { try { await ST.command({ acao: c.valor === 'pausar' ? 'pause' : 'play' }); feito = true; } catch {} }
+          if (!feito) await YT.controle(c.valor);
           return res.json({ ok: true });
         }
         if (c.alvo === 'tv') return res.json({ ok: true, nome: await ST.command(c) });

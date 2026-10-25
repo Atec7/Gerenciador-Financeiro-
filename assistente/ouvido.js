@@ -20,9 +20,20 @@ const Ouvido = (() => {
   }
   /** solta o microfone de verdade (no celular, o reconhecimento de voz só funciona com o microfone livre) */
   function fecharMic() { try { st.stream?.getTracks().forEach(t => t.stop()); } catch {} st.stream = null; st.an = null; }
+  /* No Android o microfone não consegue, ao mesmo tempo, escutar palmas e reconhecer o nome.
+     Lá o padrão é o nome ("Sete"); quem preferir palmas troca nas configurações. */
+  const ANDROID = /android/i.test(navigator.userAgent);
+  const modoNome = () => !!SR && st.wakeOk && (st.soNome || (ANDROID && localStorage.getItem('as_chamar') !== 'palmas'));
+  const reg = (...x) => { try { if (typeof REG !== 'undefined') REG.add('ouvido', ...x); } catch {} };
   async function ligar() {
     if (st.ativo) return true;
+    if (modoNome()) {
+      // só o reconhecimento do nome; confere a permissão do microfone uma vez
+      try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); } catch { return false; }
+      st.ativo = true; st.pausado = false; reg('ligado: modo nome'); iniciarWake(); manterTelaAcesa(); return true;
+    }
     try { await abrirMic(); } catch { return false; }
+    reg('ligado: palmas + nome');
     st.ativo = true; st.pausado = false;
     st.timer = setInterval(analisar, 1000 / HZ);
     iniciarWake(); manterTelaAcesa();
@@ -43,7 +54,7 @@ const Ouvido = (() => {
     clearTimeout(retomarTimer);
     retomarTimer = setTimeout(async () => {
       if (!st.ativo || !st.pausado) return;
-      try { if (!st.stream) await abrirMic(); } catch { return; }
+      if (!modoNome()) { try { if (!st.stream) await abrirMic(); } catch { return; } }
       st.pausado = false; palmas = []; candidata = null; hist = []; onsetHist = [];
       setTimeout(iniciarWake, 400);
     }, 700);
@@ -115,23 +126,44 @@ const Ouvido = (() => {
     }
   }
 
-  /* "Sete": reconhecimento de voz contínuo, só procurando a palavra de chamada */
-  // "Sete" (o nome do robô) como primeira ou segunda palavra da frase: "Sete", "Ei Sete", "Oi, Sete"; o reconhecimento às vezes escreve "7"
-  const WAKE = /^\s*(?:[a-z]+[ ,]+)?(sete|7|setti|sette)(?=$|[\s,.!?])/;
+  /* "Sete": reconhecimento de voz contínuo, só procurando o nome do robô.
+     Vale "Sete", "Ei Sete", "Oi, Sete", "Sete, liga a TV" (o nome no começo ou no fim de uma frase curta); às vezes vem escrito "7". */
+  const NOME = /^(sete|7|sette|setti|cete)[,.!?]*$/;
+  function chamou(t) {
+    const w = t.trim().split(/\s+/).filter(Boolean);
+    if (!w.length || w.length > 7) return false;
+    const i = w.findIndex(x => NOME.test(x));
+    return i >= 0 && (i <= 1 || i >= w.length - 2);
+  }
+  let falhasSeguidas = 0, ultimaReg = 0;
   function iniciarWake() {
     if (!st.ativo || st.pausado || !st.wakeOk || st.wake) return;
     try {
-      const r = st.wake = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true;
+      const r = st.wake = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 3;
       r.onresult = e => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-          if (WAKE.test(t)) { pararWake(); cb.wake(t); return; }
+        falhasSeguidas = 0;
+        for (let i = e.resultIndex || 0; i < e.results.length; i++) {
+          for (const alt of Array.from(e.results[i])) {
+            const t = alt.transcript.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (chamou(t)) { reg('chamou:', t); pararWake(); cb.wake(t); return; }
+          }
         }
       };
-      r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') st.wakeOk = e.error === 'audio-capture' ? st.wakeOk : false; if (e.error === 'audio-capture') st.wakeConflito = true; };
-      r.onend = () => { if (st.wake === r) st.wake = null; if (st.ativo && !st.pausado && !st.wakeConflito) setTimeout(iniciarWake, 300); };
+      r.onerror = e => {
+        if (Date.now() - ultimaReg > 20000) { reg('erro do reconhecimento:', e.error); ultimaReg = Date.now(); }
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') st.wakeOk = false;
+        if (e.error === 'audio-capture') {
+          // microfone ocupado pela escuta das palmas: larga as palmas e fica só com o nome
+          if (st.stream) { st.soNome = true; fecharMic(); reg('conflito de microfone: passando para modo nome'); } else falhasSeguidas++;
+        }
+        if (e.error === 'network') falhasSeguidas++;
+      };
+      r.onend = () => {
+        if (st.wake === r) st.wake = null;
+        if (st.ativo && !st.pausado && st.wakeOk) setTimeout(iniciarWake, Math.min(5000, 250 + falhasSeguidas * 700));
+      };
       r.start();
-    } catch { st.wake = null; }
+    } catch (e) { st.wake = null; reg('não iniciou:', e.message); setTimeout(iniciarWake, 1500); }
   }
   function pararWake() { const r = st.wake; st.wake = null; try { r?.abort(); } catch {} }
 
@@ -143,7 +175,7 @@ const Ouvido = (() => {
   return {
     ligar, desligar, pausar, retomar,
     on(ev, f) { cb[ev] = f; },
-    get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk && !st.wakeConflito; }, get musica() { return musica; },
+    get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk; }, get soNome() { return !st.stream; }, get musica() { return musica; },
     _sim: { palmas: () => cb.palmas(), wake: () => cb.wake('sete'), musica: (on, bpm) => cb.musica(on, bpm) } // para testes
   };
 })();
