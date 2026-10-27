@@ -4,7 +4,7 @@
    Os comandos (TV, ar, YouTube) chegam como "chamadas de função" e são executados pelo app (Live.on('acao', fn)). */
 const Live = (() => {
   const URL_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=';
-  const st = { ws: null, ativo: false, conectando: false, mic: null, ctxIn: null, ctxOut: null, proc: null, fila: [], proximo: 0, falando: false, ultimaAtividade: 0, timer: null, comBusca: LS.get('as_live_busca', false), encerrarDepois: false };
+  const st = { ws: null, ativo: false, conectando: false, mic: null, ctxIn: null, ctxOut: null, proc: null, fila: [], proximo: 0, falando: false, ultimaAtividade: 0, timer: null, comBusca: (() => { try { return localStorage.getItem('as_live_busca') === 'true'; } catch { return false; } })(), encerrarDepois: false };
   const cb = { acao: async () => ({ ok: false }), estado: () => {}, ouvi: () => {}, disse: () => {}, fim: () => {}, contexto: () => ({}) };
   const reg = (...x) => { try { REG.add('tempo real', ...x); } catch {} };
 
