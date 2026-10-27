@@ -5,21 +5,51 @@
 const Ouvido = (() => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const st = { ativo: false, pausado: false, stream: null, ctx: null, an: null, timer: null, wake: null, wakeOk: !!SR, lock: null };
-  const cb = { palmas: () => {}, wake: () => {}, musica: () => {} };
+  const cb = { palmas: () => {}, wake: () => {}, musica: () => {}, status: () => {} };
   // análise
   let piso = 0.01, ultimoPico = 0, palmas = [], hist = [], onsetHist = [], prevE = 0, musica = false, silencioDesde = 0, musicaDesde = 0;
   const HZ = 50; // amostras por segundo
 
   async function abrirMic() {
-    st.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    // ganho automático ligado: aumenta a voz de quem fala longe do celular (o cancelamento de eco evita ouvir a própria fala)
+    st.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 } });
     st.ctx ||= new (window.AudioContext || window.webkitAudioContext)();
     if (st.ctx.state === 'suspended') try { await st.ctx.resume(); } catch {}
     const src = st.ctx.createMediaStreamSource(st.stream);
     st.an = st.ctx.createAnalyser(); st.an.fftSize = 1024; st.an.smoothingTimeConstant = 0;
     src.connect(st.an);
+    // o mesmo áudio alimenta o reconhecedor do nome "Sete" (roda no próprio celular, sem internet)
+    st.proc = st.ctx.createScriptProcessor(4096, 1, 1);
+    st.proc.onaudioprocess = e => { if (st.vosk?.rec && !st.pausado && Date.now() > (st.surdoAte || 0)) { try { st.vosk.rec.acceptWaveform(e.inputBuffer); } catch {} } };
+    src.connect(st.proc); st.proc.connect(st.ctx.destination);
   }
+
+  /* reconhecedor do nome no aparelho (Vosk, português): escuta só "sete" e ignora o resto; funciona junto com as palmas */
+  function carregarVosk() {
+    if (st.vosk || !window.WebAssembly || !window.Worker) return;
+    st.vosk = { carregando: true };
+    const s = document.createElement('script'); s.src = 'vosk.js';
+    s.onload = async () => {
+      try {
+        reg('baixando o reconhecedor do nome…'); cb.status?.('carregando');
+        const model = await Vosk.createModel(new URL('modelos/vosk-pt.tar.gz', location.href).href);
+        const taxa = st.ctx?.sampleRate || 48000;
+        const rec = new model.KaldiRecognizer(taxa, JSON.stringify(['sete', 'ei sete', 'oi sete', 'o sete', 'e ai sete', '[unk]']));
+        rec.on('result', m => {
+          const t = String(m.result?.text || '').trim(); if (!t) return;
+          const w = t.split(/\s+/);
+          if (w.includes('sete') && w.length <= 3) { reg('chamou (no aparelho):', t); st.surdoAte = Date.now() + 2500; cb.wake(t); }
+        });
+        st.vosk = { model, rec, taxa }; reg('reconhecedor do nome pronto'); cb.status?.('pronto');
+        pararWake(); // não precisa mais do reconhecimento do navegador para o nome
+      } catch (e) { reg('reconhecedor do nome falhou:', String(e?.message || e)); st.vosk = { falhou: true }; cb.status?.('falhou'); iniciarWake(); }
+    };
+    s.onerror = () => { st.vosk = { falhou: true }; reg('não carregou o vosk.js'); iniciarWake(); };
+    document.head.appendChild(s);
+  }
+  const voskPronto = () => !!st.vosk?.rec;
   /** solta o microfone de verdade (no celular, o reconhecimento de voz só funciona com o microfone livre) */
-  function fecharMic() { try { st.stream?.getTracks().forEach(t => t.stop()); } catch {} st.stream = null; st.an = null; }
+  function fecharMic() { try { st.stream?.getTracks().forEach(t => t.stop()); } catch {} try { st.proc?.disconnect(); } catch {} st.stream = null; st.an = null; st.proc = null; }
   /* No Android o microfone não consegue, ao mesmo tempo, escutar palmas e reconhecer o nome.
      Lá o padrão é o nome ("Sete"); quem preferir palmas troca nas configurações. */
   const ANDROID = /android/i.test(navigator.userAgent);
@@ -27,6 +57,11 @@ const Ouvido = (() => {
   const reg = (...x) => { try { if (typeof REG !== 'undefined') REG.add('ouvido', ...x); } catch {} };
   async function ligar() {
     if (st.ativo) return true;
+    if (window.WebAssembly && window.Worker && !st.vosk?.falhou) {
+      try { await abrirMic(); } catch { return false; }
+      st.ativo = true; st.pausado = false; st.timer = setInterval(analisar, 1000 / HZ);
+      reg('ligado: palmas + nome no aparelho'); carregarVosk(); if (voskPronto()) pararWake(); manterTelaAcesa(); return true;
+    }
     if (modoNome()) {
       // só o reconhecimento do nome; confere a permissão do microfone uma vez
       try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); } catch { return false; }
@@ -54,7 +89,7 @@ const Ouvido = (() => {
     clearTimeout(retomarTimer);
     retomarTimer = setTimeout(async () => {
       if (!st.ativo || !st.pausado) return;
-      if (!modoNome()) { try { if (!st.stream) await abrirMic(); } catch { return; } }
+      if (voskPronto() || st.vosk?.carregando || !modoNome()) { try { if (!st.stream) await abrirMic(); } catch { return; } }
       st.pausado = false; palmas = []; candidata = null; hist = []; onsetHist = [];
       setTimeout(iniciarWake, 400);
     }, 700);
@@ -137,7 +172,7 @@ const Ouvido = (() => {
   }
   let falhasSeguidas = 0, ultimaReg = 0, ultimoOuvido = 0;
   function iniciarWake() {
-    if (!st.ativo || st.pausado || !st.wakeOk || st.wake) return;
+    if (!st.ativo || st.pausado || !st.wakeOk || st.wake || voskPronto() || st.vosk?.carregando) return;
     try {
       const r = st.wake = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 3;
       r.onresult = e => {
@@ -179,7 +214,7 @@ const Ouvido = (() => {
   return {
     ligar, desligar, pausar, retomar,
     on(ev, f) { cb[ev] = f; },
-    get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk; }, get soNome() { return !st.stream; }, get musica() { return musica; },
+    get ativo() { return st.ativo; }, get pausado() { return st.pausado; }, debug(on) { st.debug = on ? [] : null; }, get dbg() { return st.debug; }, get ouveNome() { return st.wakeOk; }, get soNome() { return !st.stream; }, get nomeNoAparelho() { return voskPronto(); }, get musica() { return musica; },
     _sim: { palmas: () => cb.palmas(), wake: () => cb.wake('sete'), musica: (on, bpm) => cb.musica(on, bpm) } // para testes
   };
 })();

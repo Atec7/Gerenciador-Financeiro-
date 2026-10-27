@@ -1,0 +1,2 @@
+vosk-pt.tar.gz = vosk-model-small-pt-0.3 (Alpha Cephei, licença Apache 2.0), usado só para reconhecer o nome "Sete" no próprio aparelho.
+vosk.js = vosk-browser 0.0.8 (Ciaran O'Reilly, licença Apache 2.0).

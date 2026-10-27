@@ -36,6 +36,50 @@ REG.add('app aberto', VERSAO_APP, navigator.userAgent.slice(0, 120), location.hr
 
 /* ── Voz: falar (boca mexendo) e ouvir ── */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+/* voz natural: o servidor gera a fala com o Gemini (mesma chave grátis); frases repetidas ficam guardadas no aparelho */
+const VozNatural = {
+  falhaAte: 0, memo: new Map(), audio: null,
+  ativa() { return LS.get('as_voz_natural', true) && S.ia && S.senha && Date.now() > this.falhaAte; },
+  chave(t) { return `/voz-cache/${LS.get('as_voz', 'Achird')}/${encodeURIComponent(t.slice(0, 300))}`; },
+  async obter(texto) {
+    const k = this.chave(texto);
+    if (this.memo.has(k)) return this.memo.get(k);
+    let blob = null;
+    try { const c = await caches.open('sete-voz'); const h = await c.match(k); if (h) blob = await h.blob(); } catch {}
+    if (!blob) {
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 9000);
+      try {
+        const r = await fetch('/api/assistente', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', 'x-senha': S.senha }, body: JSON.stringify({ acao: 'voz', texto, voz: LS.get('as_voz', 'Achird') }) });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw Object.assign(new Error(j.erro || `voz ${r.status}`), { status: r.status }); }
+        blob = await r.blob();
+      } finally { clearTimeout(to); }
+      // frases curtas e comuns ficam guardadas (economiza a cota e responde na hora)
+      if (texto.length < 120) try { const c = await caches.open('sete-voz'); await c.put(k, new Response(blob, { headers: { 'Content-Type': 'audio/wav' } })); } catch {}
+    }
+    const url = URL.createObjectURL(blob);
+    this.memo.set(k, url); if (this.memo.size > 40) this.memo.delete(this.memo.keys().next().value);
+    return url;
+  },
+  /** fala com a voz natural; devolve false se não deu (aí usa a voz do celular) */
+  async falar(texto, fim) {
+    if (!this.ativa()) return false;
+    try {
+      const url = await this.obter(texto);
+      const a = this.audio = this.audio || new Audio(); a.src = url;
+      let boca = null;
+      a.onplaying = () => { Robot.talk(true); clearInterval(boca); boca = setInterval(() => Robot.word(), 170); };
+      a.onended = a.onerror = a.onpause = () => { clearInterval(boca); fim(); };
+      await a.play();
+      setTimeout(() => { if (a.paused) { clearInterval(boca); fim(); } }, 30000);
+      return true;
+    } catch (e) {
+      REG.add('voz natural falhou:', e.status || '', String(e.message || e).slice(0, 80));
+      this.falhaAte = Date.now() + (e.status === 429 ? 15 * 60e3 : e.name === 'NotAllowedError' ? 0 : 60e3);
+      return false;
+    }
+  },
+  parar() { try { this.audio?.pause(); } catch {} }
+};
 const Voz = {
   rec: null, ouvindo: false,
   voice() { const vs = speechSynthesis.getVoices(); return vs.find(v => /pt[-_]BR/i.test(v.lang) && /google|luciana|francisca|daniel|felipe/i.test(v.name)) || vs.find(v => /pt[-_]BR/i.test(v.lang)) || vs.find(v => /^pt/i.test(v.lang)); },
@@ -45,13 +89,17 @@ const Voz = {
     $('#bubble').innerHTML = esc(text);
     log(text, 'bot', mood === 'sad');
     if (mood) Robot.mood(mood, mood === 'happy' || mood === 'sad' ? 4500 : 0);
-    return new Promise(resolve => {
-      const done = () => { Robot.talk(false); if (!Voz.ouvindo) Ouvido.retomar(); resolve(); };
-      if (!S.speak || !('speechSynthesis' in window)) { Robot.talk(true); setTimeout(done, Math.min(6000, 600 + text.split(' ').length * 260)); return; }
+    return new Promise(async resolve => {
+      let feito = false;
+      const done = () => { if (feito) return; feito = true; Robot.talk(false); if (!Voz.ouvindo) Ouvido.retomar(); resolve(); };
+      if (!S.speak) { Robot.talk(true); setTimeout(done, Math.min(6000, 600 + text.split(' ').length * 260)); return; }
+      // 1º: voz natural (Gemini); se não der, a voz do celular
+      if (await VozNatural.falar(text, done)) return;
+      if (!('speechSynthesis' in window)) { Robot.talk(true); setTimeout(done, Math.min(6000, 600 + text.split(' ').length * 260)); return; }
       try {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text.replace(/_/g, ' sublinhado ').replace(/\+/g, ' mais').replace(/vercel\.app/gi, 'vercel ponto app').replace(/[^\p{L}\p{N}\s.,!?;:%°$-]/gu, ''));
-        u.lang = 'pt-BR'; u.rate = 1.05; u.pitch = 1.15; const v = this.voice(); if (v) u.voice = v;
+        u.lang = 'pt-BR'; u.rate = 1.05; u.pitch = 1.0; const v = this.voice(); if (v) u.voice = v;
         u.onstart = () => Robot.talk(true); u.onboundary = () => Robot.word();
         u.onend = done; u.onerror = done;
         speechSynthesis.speak(u);
@@ -72,6 +120,7 @@ const Voz = {
     return new Promise(async resolve => {
       if (!SR) { aviso('Este navegador não reconhece voz. Use o Chrome (Android) ou o Safari (iPhone), ou escreva o comando.'); return resolve(''); }
       this.cancel(); // descarta uma escuta antiga ainda aberta
+      VozNatural.parar();
       const estavaAtento = Ouvido.ativo && !Ouvido.pausado;
       Ouvido.pausar(); // solta o microfone para o reconhecimento de voz
       try { speechSynthesis.cancel(); } catch {}
@@ -147,7 +196,7 @@ async function falar(text, opts = {}) {
 }
 async function ouvir() {
   const t = await Voz.listen();
-  if (!t) { if (S.conversa && ++S.emptyListens >= 2) { S.emptyListens = 0; S.conversa = false; syncConv(); Robot.mood('sleep', 3000); $('#heard').textContent = 'Modo conversa pausado. Toque em mim para falar.'; } return; }
+  if (!t) { if (S.conversa && ++S.emptyListens >= 2) { S.emptyListens = 0; desabafarTV(); S.conversa = false; syncConv(); Robot.mood('sleep', 3000); $('#heard').textContent = 'Modo conversa pausado. Toque em mim para falar.'; } return; }
   S.emptyListens = 0; responder(t);
 }
 
@@ -174,6 +223,7 @@ function descreve(alvo, e) {
   return e.ligado ? `O ar está ligado em ${e.temperatura} graus${modo ? `, no modo ${modo}` : ''}${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.` : `O ar está desligado${e.ambiente != null ? `. Aí dentro está fazendo ${e.ambiente} graus` : ''}.`;
 }
 async function executar(c) {
+  if (tvAbafada) { if (c.alvo === 'tv' && /^(mudo|desligar)$/.test(c.acao)) { tvAbafada = false; clearTimeout(devolverSom); } else desabafarTV(); }
   if (c.alvo === 'ar') S.ultimoAr = Date.now();
   REG.add('comando', c, 'youtube vinculado:', !!S.youtube, 'tv:', !!S.tv);
   if (!S.aqui) return falar(S.apiUrl ? 'Para comandar a TV e o ar, me abra pelo endereço do meu servidor.' : 'Ainda não tenho servidor. Quer que eu te ajude a me configurar? É só dizer: me ajuda a configurar.', { mood: 'sad' });
@@ -344,14 +394,32 @@ function pararDancaTV(modo) {
 }
 
 /* ── ouvido: duas palmas ou "Sete" chamam o robô; música no ambiente faz ele dançar ── */
+/* som da TV: tira enquanto escuta (para ouvir melhor de longe) e devolve depois de um tempo sem conversa */
+let tvAbafada = false, devolverSom = null;
+function abafarTV() {
+  if (!S.tv || !S.senha || LS.get('as_abafar', true) === false) return;
+  clearTimeout(devolverSom);
+  if (!tvAbafada) api({ acao: 'cmd', cmd: { alvo: 'tv', acao: 'abafar' } }).then(r => { tvAbafada = !!r.mutou; if (tvAbafada) REG.add('tv no mudo enquanto escuto'); }).catch(() => {});
+  devolverSom = setTimeout(desabafarTV, 25000);
+}
+function desabafarTV() {
+  clearTimeout(devolverSom);
+  if (!tvAbafada) return; tvAbafada = false;
+  api({ acao: 'cmd', cmd: { alvo: 'tv', acao: 'desabafar' } }).catch(() => {});
+}
 async function acordar(como) {
   if (passo?.field || Voz.ouvindo || document.body.classList.contains('locked')) return;
   S.conversa = true; syncConv(); Robot.mood('happy', 1500);
+  abafarTV();
   await Voz.say('Estou te ouvindo.');
   ouvir();
 }
 Ouvido.on('palmas', () => acordar('palmas'));
 Ouvido.on('wake', () => acordar('nome'));
+Ouvido.on('status', st => {
+  if (st === 'carregando') $('#heard').textContent = 'Preparando meu ouvido para o nome “Sete” (baixa 32 MB só na primeira vez)…';
+  if (st === 'pronto') $('#heard').textContent = 'Pronto! Diga “Sete” ou bata palmas duas vezes para me chamar.';
+});
 Ouvido.on('musica', (on, bpm) => { if (on) Robot.dance(true, bpm); else if (!S.musicaTV) Robot.dance(false); });
 async function ligarOuvido(avisar = false) {
   if (!S.atento || Ouvido.ativo || document.body.classList.contains('locked')) return;
@@ -822,4 +890,12 @@ if ($('#chamar-palmas')) {
     if (Ouvido.ativo) { Ouvido.desligar(); await ligarOuvido(); }
     Voz.say(e.target.checked ? 'Combinado, me chame com duas palmas.' : 'Combinado, me chame pelo nome: Sete.');
   };
+}
+
+/* voz natural: liga/desliga e escolhe a voz */
+if ($('#voz-natural')) {
+  $('#voz-natural').checked = LS.get('as_voz_natural', true);
+  $('#voz-natural').onchange = e => { LS.set('as_voz_natural', e.target.checked); VozNatural.falhaAte = 0; Voz.say(e.target.checked ? 'Pronto, essa é a minha voz nova.' : 'Voltei para a voz do celular.'); };
+  $('#voz-nome').value = LS.get('as_voz', 'Achird');
+  $('#voz-nome').onchange = e => { LS.set('as_voz', e.target.value); VozNatural.falhaAte = 0; Voz.say('Oi! Que tal essa voz?'); };
 }

@@ -157,6 +157,14 @@ export default async function handler(req, res) {
           if (!st && !yt) throw new Error(`Não achei a TV "${c.valor}". Diga "procurar TVs" para eu listar as que encontro.`);
           return res.json({ ok: true, nome: st || yt, smartthings: !!st, youtube: !!yt });
         }
+        // enquanto o robô escuta: tira o som da TV (só se ela estiver ligada e com som) e devolve depois
+        if (c.alvo === 'tv' && (c.acao === 'abafar' || c.acao === 'desabafar')) {
+          if (!await ST.configured().catch(() => false)) return res.json({ ok: true, mutou: false });
+          if (c.acao === 'desabafar') { await ST.command({ acao: 'som' }).catch(() => {}); return res.json({ ok: true }); }
+          const e = await ST.status().catch(() => null);
+          if (!e?.ligada || e.mudo) return res.json({ ok: true, mutou: false });
+          await ST.command({ acao: 'mudo' }); return res.json({ ok: true, mutou: true });
+        }
         if (c.alvo === 'tv' && c.acao === 'yt') {
           // pausar/continuar: o controle da Samsung vale para qualquer app (Netflix, YouTube, Globoplay…); o do YouTube fica de reserva
           const simples = ['pausar', 'continuar'].includes(c.valor);
