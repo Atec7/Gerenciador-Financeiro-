@@ -207,3 +207,54 @@ export async function voz(texto, nomeVoz = 'Achird') {
   }
   throw Object.assign(new Error(`Voz indisponível agora (${erro?.message}).`), { status: erro?.status || 503 });
 }
+
+/* ── conversa em tempo real (Gemini Live): o servidor só cria um token curto; o app fala direto com o Google ── */
+export const MODELOS_LIVE = ['gemini-3.8-live', 'gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview-12-2025'];
+export async function tokenLive(modelo) {
+  const cfg = await load('ia');
+  if (!cfg?.key) throw Object.assign(new Error('Sem chave do Gemini.'), { setup: 'ia' });
+  const m = modelo || cfg.modeloLive || MODELOS_LIVE[0];
+  const agora = Date.now();
+  const r = await fetch(`${API}/auth_tokens`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key }, signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ uses: 1, expireTime: new Date(agora + 30 * 60e3).toISOString(), newSessionExpireTime: new Date(agora + 2 * 60e3).toISOString() })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.name) throw Object.assign(new Error(j.error?.message?.slice(0, 160) || `token ${r.status}`), { status: r.status });
+  return { token: j.name, modelo: m };
+}
+export async function salvarModeloLive(m) { const cfg = await load('ia'); if (cfg && cfg.modeloLive !== m) await save('ia', { ...cfg, modeloLive: m }); }
+
+/** teste no servidor: abre uma sessão Live com o token e mede quanto demora o primeiro áudio */
+export async function testarLive() {
+  const out = [];
+  for (const m of MODELOS_LIVE) {
+    for (const formato of ['novo', 'antigo']) {
+      const t0 = Date.now(); let res;
+      try {
+        const { token } = await tokenLive(m);
+        res = await new Promise(resolve => {
+          const ws = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`);
+          let primeiro = null, bytes = 0, texto = '';
+          const fim = x => { try { ws.close(); } catch {} resolve(x); };
+          const to = setTimeout(() => fim({ ok: false, erro: 'tempo esgotado', primeiroAudioMs: primeiro, bytes }), 15000);
+          ws.onopen = () => ws.send(JSON.stringify({ setup: formato === 'novo'
+            ? { model: `models/${m}`, responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achird' } } }, systemInstruction: { parts: [{ text: 'Você é o Sete, fale português do Brasil.' }] }, outputAudioTranscription: {} }
+            : { model: `models/${m}`, generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achird' } } } }, systemInstruction: { parts: [{ text: 'Você é o Sete, fale português do Brasil.' }] }, outputAudioTranscription: {} } }));
+          ws.onmessage = async ev => {
+            let d; try { d = JSON.parse(typeof ev.data === 'string' ? ev.data : Buffer.from(await ev.data.arrayBuffer?.() || ev.data).toString()); } catch { return; }
+            if (d.setupComplete) { ws.send(JSON.stringify({ realtimeInput: { text: 'Oi Sete, tudo bem? Responde rapidinho.' } })); }
+            for (const p of d.serverContent?.modelTurn?.parts || []) if (p.inlineData?.data) { primeiro ??= Date.now() - t0; bytes += p.inlineData.data.length * 0.75; }
+            if (d.serverContent?.outputTranscription?.text) texto += d.serverContent.outputTranscription.text;
+            if (d.serverContent?.turnComplete) { clearTimeout(to); fim({ ok: true, primeiroAudioMs: primeiro, segundosAudio: +(bytes / 48000).toFixed(1), texto: texto.slice(0, 120) }); }
+          };
+          ws.onclose = ev => { clearTimeout(to); fim({ ok: false, erro: `fechou ${ev.code} ${String(ev.reason).slice(0, 140)}`, primeiroAudioMs: primeiro }); };
+          ws.onerror = () => {};
+        });
+      } catch (e) { res = { ok: false, erro: e.message }; }
+      out.push({ modelo: m, formato, ms: Date.now() - t0, ...res });
+      if (res.ok) { await salvarModeloLive(m); return { escolhido: m, formato, testes: out }; }
+    }
+  }
+  return { escolhido: null, testes: out };
+}

@@ -75,6 +75,12 @@ export default async function handler(req, res) {
       return res.json({ ok: true, bytes: a.length, segundos: +((a.length - 44) / 48000).toFixed(1), ms: Date.now() - t0, modelo: c?.modeloVoz }); }
     catch (e) { return res.json({ ok: false, erro: e.message, ms: Date.now() - t0 }); }
   }
+  if (acao === 'diag-live') {
+    if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
+    let r; try { r = await IA.testarLive(); } catch (e) { r = { erro: e.message }; }
+    await fetch(`${FB}/assistente/diag-live.json`, { method: 'PUT', body: JSON.stringify({ ...r, em: new Date().toISOString() }) }).catch(() => {});
+    return res.json(r);
+  }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
@@ -124,6 +130,7 @@ export default async function handler(req, res) {
       case 'yt-telas': return res.json({ ok: true, ...(await YT.telas()) });
       case 'yt-remover': await YT.remover(b.nome); return res.json({ ok: true, ...(await YT.telas()) });
       case 'ia-setup': return res.json({ ok: true, modelo: await IA.setup(b.key) });
+      case 'live-token': return res.json({ ok: true, ...(await IA.tokenLive()) });
       case 'voz': {
         // frase falada com voz natural (WAV); o app usa a voz do celular se isso falhar
         const audio = await IA.voz(String(b.texto || ''), String(b.voz || ''));
