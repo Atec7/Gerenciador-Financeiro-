@@ -18,6 +18,10 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const q = req.query || {};
   // "ping": o robô (aberto no GitHub Pages durante a configuração) confere se o servidor existe — sem dados sensíveis
+  if (q.acao === 'arquivo-modelo') { // confere se o modelo do ouvido está publicado (sem dados sensíveis)
+    const r = await fetch(`https://${host(req)}/assistente/modelos/vosk-pt.tar.gz`, { method: 'HEAD' }).catch(e => ({ status: String(e.message) }));
+    return res.json({ status: r.status, tamanho: r.headers?.get?.('content-length'), tipo: r.headers?.get?.('content-type') });
+  }
   if (q.acao === 'ping' || req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') return res.status(204).end();
