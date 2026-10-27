@@ -169,3 +169,41 @@ export async function conversar(texto, historico = [], ctx = {}) {
   }
   throw Object.assign(new Error(erro?.status === 429 ? 'Minha cota grátis de inteligência acabou por agora. Tente daqui a pouco.' : `Não consegui pensar agora (${erro?.message}).`), { tentativas });
 }
+
+/* ── voz humana: Gemini TTS (usa a mesma chave grátis; sem conta nova) ── */
+const MODELOS_VOZ = ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
+export const VOZES = ['Achird', 'Puck', 'Charon', 'Umbriel', 'Sadachbia', 'Iapetus'];
+function wav(pcm, rate = 24000) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12);
+  h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28);
+  h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+/** devolve um WAV com a frase falada por uma voz natural */
+export async function voz(texto, nomeVoz = 'Achird') {
+  const cfg = await load('ia');
+  if (!cfg?.key) throw Object.assign(new Error('Sem chave do Gemini.'), { setup: 'ia' });
+  const v = VOZES.includes(nomeVoz) ? nomeVoz : 'Achird';
+  const ordem = [cfg.modeloVoz, ...MODELOS_VOZ].filter((m, i, a) => m && a.indexOf(m) === i);
+  let erro;
+  for (const m of ordem) {
+    try {
+      const r = await fetch(`${API}/models/${m}:generateContent?key=${encodeURIComponent(cfg.key)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `Fale em português do Brasil, com voz masculina calorosa, simpática e natural, no ritmo de uma conversa entre amigos: ${String(texto).slice(0, 600)}` }] }],
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: v } } } }
+        })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw Object.assign(new Error(j.error?.message?.slice(0, 140) || `HTTP ${r.status}`), { status: r.status });
+      const part = (j.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.data);
+      if (!part) throw Object.assign(new Error('sem áudio'), { status: 500 });
+      const rate = +(String(part.inlineData.mimeType).match(/rate=(\d+)/) || [])[1] || 24000;
+      if (m !== cfg.modeloVoz) await save('ia', { ...cfg, modeloVoz: m });
+      return wav(Buffer.from(part.inlineData.data, 'base64'), rate);
+    } catch (e) { erro = e; if (![404, 429, 500, 503, 400].includes(e.status) && e.name !== 'TimeoutError') break; }
+  }
+  throw Object.assign(new Error(`Voz indisponível agora (${erro?.message}).`), { status: erro?.status || 503 });
+}

@@ -63,6 +63,14 @@ export default async function handler(req, res) {
     await fetch(`${FB}/assistente/diag-ia.json`, { method: 'PUT', body: JSON.stringify(out) }).catch(() => {});
     return res.json(out);
   }
+  // teste da voz (GET, com a senha): devolve o áudio ou o erro
+  if (acao === 'diag-voz') {
+    if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
+    const t0 = Date.now();
+    try { const a = await IA.voz(String(q.texto || 'Oi! Eu sou o Sete. Tudo certo por aí?'), String(q.voz || '')); const c = await (await import('./_lib/store.js')).load('ia');
+      return res.json({ ok: true, bytes: a.length, segundos: +((a.length - 44) / 48000).toFixed(1), ms: Date.now() - t0, modelo: c?.modeloVoz }); }
+    catch (e) { return res.json({ ok: false, erro: e.message, ms: Date.now() - t0 }); }
+  }
   // diagnóstico do ar (GET, com a senha): mostra cada etapa até o aparelho, sem dados sensíveis
   if (acao === 'diag-ar') {
     if (!checkSenha(req.headers['x-senha'] || q.senha)) { await new Promise(r => setTimeout(r, 1500)); return res.status(401).json({ ok: false, erro: 'Senha incorreta.' }); }
@@ -112,6 +120,12 @@ export default async function handler(req, res) {
       case 'yt-telas': return res.json({ ok: true, ...(await YT.telas()) });
       case 'yt-remover': await YT.remover(b.nome); return res.json({ ok: true, ...(await YT.telas()) });
       case 'ia-setup': return res.json({ ok: true, modelo: await IA.setup(b.key) });
+      case 'voz': {
+        // frase falada com voz natural (WAV); o app usa a voz do celular se isso falhar
+        const audio = await IA.voz(String(b.texto || ''), String(b.voz || ''));
+        res.setHeader('Content-Type', 'audio/wav'); res.setHeader('Cache-Control', 'private, max-age=86400');
+        return res.status(200).send(audio);
+      }
       case 'conversa': {
         const [t, tv, ar] = await Promise.all([YT.telas().catch(() => ({ telas: [] })), ST.configured().catch(() => false), Gree.configured().catch(() => false)]);
         return res.json({ ok: true, ...(await IA.conversar(b.texto, b.historico, { tv, ar, telas: t.telas, telaAtiva: t.ativa, memoria: Array.isArray(b.memoria) ? b.memoria.slice(-30).map(x => String(x).slice(0, 120)) : [] })) });
