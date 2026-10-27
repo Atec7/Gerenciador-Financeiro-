@@ -229,7 +229,7 @@ export async function salvarModeloLive(m) { const cfg = await load('ia'); if (cf
 export async function testarLive() {
   const out = [];
   for (const m of MODELOS_LIVE) {
-    for (const formato of ['novo', 'antigo']) {
+    for (const formato of (m === 'gemini-3.8-live' ? ['completo', 'sem-busca', 'antigo'] : ['antigo'])) {
       const t0 = Date.now(); let res;
       try {
         const { token } = await tokenLive(m);
@@ -238,12 +238,13 @@ export async function testarLive() {
           let primeiro = null, bytes = 0, texto = '';
           const fim = x => { try { ws.close(); } catch {} resolve(x); };
           const to = setTimeout(() => fim({ ok: false, erro: 'tempo esgotado', primeiroAudioMs: primeiro, bytes }), 15000);
-          ws.onopen = () => ws.send(JSON.stringify({ setup: formato === 'novo'
-            ? { model: `models/${m}`, responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achird' } } }, systemInstruction: { parts: [{ text: 'Você é o Sete, fale português do Brasil.' }] }, outputAudioTranscription: {} }
+ const ferr = [{ functionDeclarations: [{ name: 'controlar_ar', description: 'Controla o ar.', parameters: { type: 'OBJECT', properties: { acao: { type: 'STRING' } }, required: ['acao'] } }] }];
+          ws.onopen = () => ws.send(JSON.stringify({ setup: formato !== 'antigo'
+            ? { model: `models/${m}`, generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achird' } }, languageCode: 'pt-BR' } }, systemInstruction: { parts: [{ text: 'Você é o Sete, fale português do Brasil.' }] }, tools: formato === 'completo' ? [{ googleSearch: {} }, ...ferr] : ferr, inputAudioTranscription: {}, outputAudioTranscription: {} }
             : { model: `models/${m}`, generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achird' } } } }, systemInstruction: { parts: [{ text: 'Você é o Sete, fale português do Brasil.' }] }, outputAudioTranscription: {} } }));
           ws.onmessage = async ev => {
             let d; try { d = JSON.parse(typeof ev.data === 'string' ? ev.data : Buffer.from(await ev.data.arrayBuffer?.() || ev.data).toString()); } catch { return; }
-            if (d.setupComplete) { ws.send(JSON.stringify({ realtimeInput: { text: 'Oi Sete, tudo bem? Responde rapidinho.' } })); }
+            if (d.setupComplete) { ws.send(JSON.stringify({ realtimeInput: { text: formato === 'completo' ? 'Oi Sete! Quem ganhou o último jogo do Flamengo? Responde rapidinho.' : 'Oi Sete, tudo bem? Responde rapidinho.' } })); }
             for (const p of d.serverContent?.modelTurn?.parts || []) if (p.inlineData?.data) { primeiro ??= Date.now() - t0; bytes += p.inlineData.data.length * 0.75; }
             if (d.serverContent?.outputTranscription?.text) texto += d.serverContent.outputTranscription.text;
             if (d.serverContent?.turnComplete) { clearTimeout(to); fim({ ok: true, primeiroAudioMs: primeiro, segundosAudio: +(bytes / 48000).toFixed(1), texto: texto.slice(0, 120) }); }
@@ -253,7 +254,7 @@ export async function testarLive() {
         });
       } catch (e) { res = { ok: false, erro: e.message }; }
       out.push({ modelo: m, formato, ms: Date.now() - t0, ...res });
-      if (res.ok) { await salvarModeloLive(m); return { escolhido: m, formato, testes: out }; }
+      if (res.ok && formato !== 'completo') { await salvarModeloLive(m); return { escolhido: m, formato, testes: out }; }
     }
   }
   return { escolhido: null, testes: out };

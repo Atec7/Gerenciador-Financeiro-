@@ -407,8 +407,58 @@ function desabafarTV() {
   if (!tvAbafada) return; tvAbafada = false;
   api({ acao: 'cmd', cmd: { alvo: 'tv', acao: 'desabafar' } }).catch(() => {});
 }
+/* ── conversa em tempo real (Gemini Live) ── */
+const tempoReal = () => LS.get('as_tempo_real', true) && S.ia && S.senha && !passo && !document.body.classList.contains('locked');
+let liveFalhaAte = 0;
+async function conversarTempoReal(chamado) {
+  if (!tempoReal() || Date.now() < liveFalhaAte) return false;
+  Ouvido.pausar(); VozNatural.parar(); try { speechSynthesis.cancel(); } catch {}
+  abafarTV();
+  $('#heard').textContent = 'Conectando…'; Robot.mood('thinking');
+  const ok = await Live.iniciar({ saudacao: chamado ? 'Estou te ouvindo.' : 'Pode falar!' });
+  if (!ok) { liveFalhaAte = Date.now() + 5 * 60e3; Ouvido.retomar(); return false; }
+  return true;
+}
+let falaLive = '';
+Live.on('contexto', () => ({ memoria: LS.get('as_memoria', []), tv: S.tv, ar: S.ar, youtube: S.youtube, conversa: S.hist.slice(-6).map(h => `${h.quem === 'eu' ? 'pessoa' : 'Sete'}: ${h.texto}`) }));
+Live.on('estado', e => {
+  if (e === 'ouvindo') { Robot.mood('listening'); $('#mic').classList.add('listening'); if (!$('#heard').textContent || $('#heard').textContent === 'Conectando…') $('#heard').textContent = 'Pode falar, estou ouvindo…'; if (falaLive) { lembrarConversa('robo', falaLive); log(falaLive, 'bot'); falaLive = ''; } }
+  if (e === 'falando') Robot.mood('happy');
+  if (e === 'fim' || e === 'erro') { $('#mic').classList.remove('listening'); Robot.mood('idle'); if (falaLive) { lembrarConversa('robo', falaLive); log(falaLive, 'bot'); falaLive = ''; } }
+});
+let ouviLive = '', ouviTimer = null;
+Live.on('ouvi', t => { ouviLive += t; $('#heard').textContent = `“${ouviLive.trim()}”`; clearTimeout(ouviTimer); ouviTimer = setTimeout(() => { if (ouviLive.trim()) { lembrarConversa('eu', ouviLive.trim()); log(ouviLive.trim(), 'me'); REG.add('ouvi (tempo real)', ouviLive.trim()); } ouviLive = ''; }, 1500); });
+Live.on('disse', t => { falaLive += t; $('#bubble').textContent = falaLive.trim(); });
+Live.on('fim', () => { desabafarTV(); Ouvido.retomar(); setTimeout(() => { if (!Live.ativo) $('#heard').textContent = Ouvido.ativo ? 'Diga “Sete” para me chamar.' : ''; }, 1500); });
+Live.on('acao', async c => {
+  try {
+    if (c.lembrar) { const mem = LS.get('as_memoria', []); if (!mem.includes(c.lembrar)) mem.push(c.lembrar); LS.set('as_memoria', mem.slice(-30)); return { ok: true }; }
+    REG.add('comando (tempo real)', c);
+    return { ok: true, resultado: await fazer(c) };
+  } catch (e) { REG.add('comando falhou', e.message); return { ok: false, erro: e.message }; }
+});
+/** executa um comando sem falar (quem fala é o Gemini) e devolve o resultado em texto */
+async function fazer(c) {
+  if (c.alvo === 'ar') S.ultimoAr = Date.now();
+  if (c.estado) { const { estado } = await api({ acao: 'estado', alvo: c.alvo }); return descreve(c.alvo, estado); }
+  if (c.acao === 'youtube') {
+    if (querTV(c) && S.youtube) {
+      try { const r = await api({ acao: 'cmd', cmd: { ...c, naTV: true } }); if (c.musica !== false) dancarComTV(); return `Tocando ${r.video?.titulo || c.valor} na TV.`; }
+      catch (e) { if (e.status === 401) throw e; c = { ...c, video: e.video }; }
+    }
+    const video = c.video || (await api({ acao: 'yt-busca', q: c.valor })).video;
+    const v = await Player.tocar(video); S.musicaLocal = c.musica !== false;
+    return `Tocando ${v.titulo} aqui no celular.`;
+  }
+  if (c.acao === 'yt' && Player.ativo) { ({ pausar: Player.pausar, continuar: Player.continuar, proximo: Player.proximo }[c.valor] || (() => {}))(); return 'Feito no player do celular.'; }
+  if (tvAbafada && c.alvo === 'tv' && /^(mudo|desligar)$/.test(c.acao)) { tvAbafada = false; clearTimeout(devolverSom); }
+  const r = await api({ acao: 'cmd', cmd: c });
+  if (c.acao === 'yt' && c.valor === 'pausar' || c.acao === 'desligar') pararDancaTV('parar');
+  return Comandos.reply(r.valor != null && c.alvo === 'ar' ? { ...c, acao: 'temperatura', valor: r.valor } : c) + '.';
+}
 async function acordar(como) {
   if (passo?.field || Voz.ouvindo || document.body.classList.contains('locked')) return;
+  if (await conversarTempoReal(true)) return;
   S.conversa = true; syncConv(); Robot.mood('happy', 1500);
   abafarTV();
   await Voz.say('Estou te ouvindo.');
@@ -811,11 +861,17 @@ async function primeiroToque() {
 
 $('#robot').onclick = async () => {
   if (await primeiroToque()) return;
+  if (Live.ativo) { Live.encerrar('toque'); return; } // tocar durante a conversa em tempo real: encerra
   if (Voz.ouvindo) { Voz.rec?.stop(); return; } // tocar de novo: termina a frase e processa
+  if (await conversarTempoReal(false)) return;
   ouvir();
 };
-$('#mic').onclick = async () => { if (await primeiroToque()) return; ouvir(); };
-$('#type-form').onsubmit = async e => { e.preventDefault(); Voz.cancel(); const v = $('#type').value; $('#type').value = ''; S.started = true; responder(v); };
+$('#mic').onclick = async () => { if (await primeiroToque()) return; if (Live.ativo) { Live.encerrar('toque'); return; } if (await conversarTempoReal(false)) return; ouvir(); };
+$('#type-form').onsubmit = async e => {
+  e.preventDefault(); Voz.cancel(); const v = $('#type').value; $('#type').value = ''; S.started = true;
+  if (v.trim() && Live.ativo && Live.enviarTexto(v)) { log(v, 'me'); return; }
+  responder(v);
+};
 document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { S.started = true; responder(b.dataset.q); });
 $('#btn-ear').onclick = async () => {
   S.started = true; S.atento = !Ouvido.ativo; LS.set('as_atento', S.atento);
@@ -898,4 +954,10 @@ if ($('#voz-natural')) {
   $('#voz-natural').onchange = e => { LS.set('as_voz_natural', e.target.checked); VozNatural.falhaAte = 0; Voz.say(e.target.checked ? 'Pronto, essa é a minha voz nova.' : 'Voltei para a voz do celular.'); };
   $('#voz-nome').value = LS.get('as_voz', 'Achird');
   $('#voz-nome').onchange = e => { LS.set('as_voz', e.target.value); VozNatural.falhaAte = 0; Voz.say('Oi! Que tal essa voz?'); };
+}
+
+/* conversa em tempo real: liga/desliga */
+if ($('#tempo-real')) {
+  $('#tempo-real').checked = LS.get('as_tempo_real', true);
+  $('#tempo-real').onchange = e => { LS.set('as_tempo_real', e.target.checked); liveFalhaAte = 0; if (!e.target.checked && Live.ativo) Live.encerrar('desligado'); };
 }
