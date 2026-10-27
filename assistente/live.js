@@ -4,7 +4,7 @@
    Os comandos (TV, ar, YouTube) chegam como "chamadas de função" e são executados pelo app (Live.on('acao', fn)). */
 const Live = (() => {
   const URL_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=';
-  const st = { ws: null, ativo: false, conectando: false, mic: null, ctxIn: null, ctxOut: null, proc: null, fila: [], proximo: 0, falando: false, ultimaAtividade: 0, timer: null, comBusca: true, encerrarDepois: false };
+  const st = { ws: null, ativo: false, conectando: false, mic: null, ctxIn: null, ctxOut: null, proc: null, fila: [], proximo: 0, falando: false, ultimaAtividade: 0, timer: null, comBusca: LS.get('as_live_busca', false), encerrarDepois: false };
   const cb = { acao: async () => ({ ok: false }), estado: () => {}, ouvi: () => {}, disse: () => {}, fim: () => {}, contexto: () => ({}) };
   const reg = (...x) => { try { REG.add('tempo real', ...x); } catch {} };
 
@@ -141,7 +141,7 @@ Aparelhos: TV ${ctx.tv ? 'conectada' : 'não conectada'}; ar-condicionado ${ctx.
         const motivo = `${ev.code} ${String(ev.reason || '').slice(0, 120)}`;
         if (!st.pronto) {
           // sem a busca do Google (alguns planos grátis não têm): tenta de novo sem ela
-          if (st.comBusca && /search|tool|grounding/i.test(ev.reason || '')) { st.comBusca = false; reg('sem busca do Google:', motivo); return api({ acao: 'live-token' }).then(t => conectar(t.token, t.modelo, saudacao)).then(ok, falha); }
+          if (st.comBusca && /search|tool|grounding|quota/i.test(ev.reason || '')) { st.comBusca = false; reg('sem busca do Google:', motivo); return api({ acao: 'live-token' }).then(t => conectar(t.token, t.modelo, saudacao)).then(ok, falha); }
           return falha(new Error(motivo));
         }
         reg('sessão fechada', motivo); encerrar('fechou');
